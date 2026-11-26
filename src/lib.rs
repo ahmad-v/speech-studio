@@ -7,8 +7,10 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"audio-info",label:"Audio inspection",hint:"Inspect local 16 kHz mono PCM16 WAV; maximum 10 minutes."},
  Operation{id:"prepare-wav",label:"Prepare WAV for speech recognition",hint:"Convert 16, 32, 44.1 or 48 kHz mono/stereo PCM16 WAV to a new 16 kHz mono WAV."},
  Operation{id:"open-vtt",label:"Open WebVTT",hint:"Import plain-text WebVTT cues into the editable SRT draft."},
+ Operation{id:"open-json",label:"Open transcript JSON",hint:"Load a version 1 transcript JSON file into the editable draft."},
  Operation{id:"open-srt",label:"Open SRT",hint:"Load and validate UTF-8 SRT into editable draft."},
  Operation{id:"export-srt",label:"Save SRT",hint:"Validate editable draft, or load SRT from input if draft empty. New .srt output."},
+ Operation{id:"export-json",label:"Save transcript JSON",hint:"Export an SRT file or the edited draft with millisecond timestamps. Choose a new .json file."},
  Operation{id:"export-txt",label:"Save text",hint:"Extract text from editable SRT draft or input SRT. New .txt output."},
  Operation{id:"export-vtt",label:"Save WebVTT",hint:"Export an SRT file or edited SRT draft as plain-text WebVTT cues. Choose a new .vtt output."},
  #[cfg(feature="asr")]
@@ -122,12 +124,42 @@ fn prepare_wav(input: &Path, output: &Path, job: &Job) -> Result<u32> {
     })?;
     Ok(output_frames)
 }
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Segment {
+    #[serde(rename = "start_ms")]
     start: u64,
+    #[serde(rename = "end_ms")]
     end: u64,
     text: String,
 }
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Transcript {
+    schema_version: u32,
+    segments: Vec<Segment>,
+}
+
+fn open_transcript(path: &Path, job: &Job) -> Result<(String, usize)> {
+    let bytes = read_bounded(path, 16 * 1024 * 1024)?;
+    let Transcript {
+        schema_version,
+        segments,
+    } = serde_json::from_slice(&bytes)?;
+    if schema_version != 1 {
+        return Err(Error::input("Unsupported transcript JSON version"));
+    }
+    job.check()?;
+    let draft = render(&segments);
+    if parse(&draft)? != segments {
+        return Err(Error::input(
+            "Transcript must round trip through the SRT draft without loss",
+        ));
+    }
+    job.check()?;
+    Ok((draft, segments.len()))
+}
+
 fn stamp(ms: u64) -> String {
     format!(
         "{:02}:{:02}:{:02},{:03}",
@@ -447,19 +479,31 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
             out.warnings
                 .push("Cue identifiers and NOTE blocks are omitted.".into());
         }
-        "open-srt" | "export-srt" | "export-txt" | "export-vtt" => {
+        "open-json" => {
+            let (draft, count) = open_transcript(&r.input, &j)?;
+            out.preview = format!("{count} transcript segments imported");
+            out.draft = Some(draft);
+        }
+        "open-srt" | "export-srt" | "export-txt" | "export-vtt" | "export-json" => {
             let source = if r.operation == "open-srt" || r.draft.trim().is_empty() {
                 String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?
             } else {
                 r.draft
             };
             let segments = parse(&source)?;
-            let normalized = render(&segments);
+            let count = segments.len();
             if r.operation == "open-srt" {
-                out.draft = Some(normalized);
+                out.draft = Some(render(&segments));
             } else {
                 let (ext, content) = match r.operation.as_str() {
-                    "export-srt" => ("srt", normalized),
+                    "export-srt" => ("srt", render(&segments)),
+                    "export-json" => (
+                        "json",
+                        serde_json::to_string_pretty(&Transcript {
+                            schema_version: 1,
+                            segments,
+                        })?,
+                    ),
                     "export-vtt" => ("vtt", render_vtt(&segments, &j)?),
                     _ => (
                         "txt",
@@ -477,7 +521,7 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
                 write_bytes(&r.output, content.as_bytes())?;
                 out.written = Some(r.output);
             }
-            out.preview = format!("{} subtitle segments", segments.len());
+            out.preview = format!("{count} subtitle segments");
         }
         #[cfg(feature = "asr")]
         "transcribe" => {
@@ -499,6 +543,34 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn transcript_json_round_trips_draft_text_and_timing() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("transcript.json");
+        let source = "1\n00:00:00,250 --> 00:00:01,500\nCafé\nα & β\n";
+        handle(
+            Request {
+                operation: "export-json".into(),
+                output: output.clone(),
+                draft: source.into(),
+                ..Request::default()
+            },
+            Job::new(),
+        )
+        .unwrap();
+        let json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&output).unwrap()).unwrap();
+        assert_eq!(json["schema_version"], 1);
+        assert_eq!(json["segments"][0]["start_ms"], 250);
+        assert_eq!(json["segments"][0]["end_ms"], 1500);
+        let (draft, count) = open_transcript(&output, &Job::new()).unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(parse(&draft).unwrap(), parse(source).unwrap());
+        let wrong_version = dir.path().join("unsupported.json");
+        std::fs::write(&wrong_version, r#"{"schema_version":2,"segments":[]}"#).unwrap();
+        assert!(open_transcript(&wrong_version, &Job::new()).is_err());
+    }
+
     #[test]
     fn roundtrip() {
         let s =

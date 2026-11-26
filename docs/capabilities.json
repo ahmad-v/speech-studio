@@ -47,6 +47,20 @@
       "fixture_status": "not run"
     },
     {
+      "operation": "open-json",
+      "description": "Version 1 text and millisecond transcript exchange",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux transcript round trip and independent JSON checks passed"
+    },
+    {
+      "operation": "export-json",
+      "description": "Version 1 text and millisecond transcript exchange",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux transcript round trip and independent JSON checks passed"
+    },
+    {
       "operation": "export-txt",
       "description": "Plain transcript text",
       "status": "implemented-unverified",

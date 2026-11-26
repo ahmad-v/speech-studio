@@ -10,6 +10,7 @@ publish = false
 [dependencies]
 localwright-core = { git = "https://github.com/ahmad-v/localwright", rev = "b18f5303ca5e7684881ccce9951cbee8b25dea82", version = "=0.1.0" }
 localwright-ui = { git = "https://github.com/ahmad-v/localwright", rev = "b18f5303ca5e7684881ccce9951cbee8b25dea82", version = "=0.1.0", optional = true }
+serde = { version = "=1.0.219", features = ["derive"] }
 serde_json = "=1.0.140"
 hound = "=3.5.1"
 sha2 = "=0.10.8"

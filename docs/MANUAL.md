@@ -9,6 +9,8 @@ Development source only. Launch the GUI after compiling. Choose an operation, en
 - `export-srt`: Validated SRT output.
 - `export-vtt` writes WebVTT from SRT input or an edited draft. Cue text is exported as literal text.
 - `transcribe`: For an ASR-enabled build, leave the parameter blank to use the [private English model pack](WHISPER_MODEL_PACK.md).
+- `export-json`: Save transcript text and timings from the SRT path or draft. The schema is `{"schema_version":1,"segments":[{"start_ms":0,"end_ms":1000,"text":"example"}]}`.
+- `open-json`: Restore a version 1 transcript into an editable SRT draft. Unsupported versions, unknown fields, invalid timing and text outside the SRT draft subset are rejected.
 - `export-txt`: Plain transcript text.
 
 Limitations: No redistributed ASR model or reference speech. Optional native inference source only, not enabled in default build. Private Tiny English pack or explicit local model path with expected SHA-256 required; user hash is integrity, not authenticity. Cancellation cannot interrupt inference itself. No playback, resampling, waveform, language accuracy, WER, translation, diarization, TTS or model pack. SRT supports strict basic timecodes and sequential indices; overlapping segments allowed.

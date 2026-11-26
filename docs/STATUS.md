@@ -10,6 +10,7 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 | open-srt | UTF-8 SRT subset; editable draft | Linux fixture-tested |
 | export-srt | Validated SRT output | Linux fixture-tested |
 | export-vtt | Plain-text WebVTT from SRT input or draft | Linux fixture-tested |
+| open-json / export-json | Versioned UTF-8 transcript exchange with millisecond timings | Linux fixture and CLI-tested |
 | export-txt | Plain transcript text | Linux fixture-tested |
 | transcribe | Optional CPU whisper-rs adapter, optional private Tiny English pack or an explicit model path | Linux x64 app-relative model and export smoke-tested |
 

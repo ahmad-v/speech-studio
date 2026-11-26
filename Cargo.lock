@@ -2318,6 +2318,7 @@ dependencies = [
  "hound",
  "localwright-core",
  "localwright-ui",
+ "serde",
  "serde_json",
  "sha2",
  "tempfile",
