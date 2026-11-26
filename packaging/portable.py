@@ -9,7 +9,8 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from package import CFG, TARGETS, check_binary, payload, validate_host
+from dependency_notices import collect
+from package import CFG, R, TARGETS, check_binary, payload, validate_host
 
 
 def main():
@@ -32,6 +33,7 @@ def main():
         temp = Path(directory)
         bundle = temp / name
         payload(bundle, args.binary)
+        collect(R, bundle, args.target, args.binary)
         (bundle / "PAYLOAD_STATUS.txt").write_text(
             "Unsigned portable development build. Launch the application in this directory.\n"
             "This bundle contains no private engines or speech model. Platform libraries may be required.\n",
@@ -41,8 +43,9 @@ def main():
         if windows:
             archive = temp / f"{stem}.zip"
             with zipfile.ZipFile(archive, "x", zipfile.ZIP_DEFLATED) as output:
-                for path in sorted(bundle.iterdir()):
-                    output.write(path, str(Path(name) / path.name))
+                for path in sorted(bundle.rglob("*")):
+                    if path.is_file():
+                        output.write(path, path.relative_to(temp).as_posix())
             with zipfile.ZipFile(archive) as output:
                 output.extractall(extracted)
         else:
