@@ -10,6 +10,7 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"open-json",label:"Open transcript JSON",hint:"Load a version 1 transcript JSON file into the editable draft."},
  Operation{id:"open-srt",label:"Open SRT",hint:"Load and validate UTF-8 SRT into editable draft."},
  Operation{id:"export-srt",label:"Save SRT",hint:"Validate editable draft, or load SRT from input if draft empty. New .srt output."},
+ Operation{id:"replace-text",label:"Find and replace transcript text",hint:"Enter JSON with find and replace. Uses the SRT file or current draft and preserves timestamps."},
  Operation{id:"export-json",label:"Save transcript JSON",hint:"Export an SRT file or the edited draft with millisecond timestamps. Choose a new .json file."},
  Operation{id:"export-txt",label:"Save text",hint:"Extract text from editable SRT draft or input SRT. New .txt output."},
  Operation{id:"export-vtt",label:"Save WebVTT",hint:"Export an SRT file or edited SRT draft as plain-text WebVTT cues. Choose a new .vtt output."},
@@ -158,6 +159,46 @@ fn open_transcript(path: &Path, job: &Job) -> Result<(String, usize)> {
     }
     job.check()?;
     Ok((draft, segments.len()))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Replacement {
+    find: String,
+    replace: String,
+}
+
+fn replace_text(mut segments: Vec<Segment>, parameter: &str, job: &Job) -> Result<(String, usize)> {
+    if parameter.len() > 64 * 1024 {
+        return Err(Error::input("Replacement settings exceed the limit"));
+    }
+    let rule: Replacement = serde_json::from_str(parameter)?;
+    if rule.find.is_empty() {
+        return Err(Error::input("Find text must not be empty"));
+    }
+    let mut count = 0usize;
+    let mut remaining = 2 * 1024 * 1024usize;
+    for segment in &mut segments {
+        job.check()?;
+        let matches = segment.text.matches(&rule.find).count();
+        let bytes = (segment.text.len() - matches * rule.find.len())
+            .saturating_add(matches.saturating_mul(rule.replace.len()));
+        remaining = remaining
+            .checked_sub(bytes)
+            .ok_or_else(|| Error::input("Replacement exceeds the transcript size limit"))?;
+        if matches > 0 {
+            segment.text = segment.text.replace(&rule.find, &rule.replace);
+            count += matches;
+        }
+    }
+    let draft = render(&segments);
+    if parse(&draft)? != segments {
+        return Err(Error::input(
+            "Replacement produces text outside the supported subtitle format",
+        ));
+    }
+    job.check()?;
+    Ok((draft, count))
 }
 
 fn stamp(ms: u64) -> String {
@@ -479,6 +520,16 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
             out.warnings
                 .push("Cue identifiers and NOTE blocks are omitted.".into());
         }
+        "replace-text" => {
+            let source = if r.draft.trim().is_empty() {
+                String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?
+            } else {
+                r.draft
+            };
+            let (draft, count) = replace_text(parse(&source)?, &r.parameter, &j)?;
+            out.preview = format!("Replaced {count} occurrences in the draft");
+            out.draft = Some(draft);
+        }
         "open-json" => {
             let (draft, count) = open_transcript(&r.input, &j)?;
             out.preview = format!("{count} transcript segments imported");
@@ -543,6 +594,24 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn replace_text_preserves_timing_and_rejects_empty_cues() {
+        let original = "1\n00:00:00,120 --> 00:00:01,250\nCafé Café\n\n2\n00:00:02,000 --> 00:00:03,000\nTea\n";
+        let segments = parse(original).unwrap();
+        let (draft, changed) = replace_text(
+            segments.clone(),
+            r#"{"find":"Café","replace":"Coffee"}"#,
+            &Job::new(),
+        )
+        .unwrap();
+        assert_eq!(changed, 2);
+        let edited = parse(&draft).unwrap();
+        assert_eq!(edited[0].text, "Coffee Coffee");
+        assert_eq!((edited[0].start, edited[0].end), (120, 1250));
+        assert_eq!(edited[1], segments[1]);
+        assert!(replace_text(segments, r#"{"find":"Tea","replace":""}"#, &Job::new()).is_err());
+    }
+
     #[test]
     fn transcript_json_round_trips_draft_text_and_timing() {
         let dir = tempfile::tempdir().unwrap();

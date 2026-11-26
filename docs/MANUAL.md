@@ -1,11 +1,12 @@
 # Offline manual | Speech Studio
 
-Development source only. Launch the GUI after compiling. Choose an operation, enter local input path and a new output path where needed, set the parameter as described under the operation selector, then Run. Status and errors are shown below. Cancel requests cooperative cancellation. The draft editor accepts transcript or plain text. Choose a theme to change workbench colors and control borders. UI scale adjusts the controls from 80% to 300% for the current session. Paths are manually typed in this increment; native dialogs and full accessibility remain pending.
+Development source only. Launch the GUI after compiling. Choose an operation, enter local input path and a new output path where needed, set the parameter as described under the operation selector, then Run. Status and errors are shown below. Cancel requests cooperative cancellation. The draft editor accepts transcript or plain text. Choose a theme to change workbench colors and control borders. UI scale adjusts the controls from 80% to 300% and remembers your appearance choices when you reopen the app. Paths are manually typed in this increment; native dialogs and full accessibility remain pending.
 
 - `open-vtt`: Imports simple UTF-8 cues. Cue settings, regions, styles, and timed markup are outside this route. Cue identifiers and NOTE blocks are omitted.
 - `prepare-wav`: Converts mono or stereo PCM16 WAV at 16, 32, or 48 kHz to a new 16 kHz mono WAV. Downsampling averages groups of input frames.
 - `audio-info`: 16 kHz mono signed PCM16 WAV.
 - `open-srt`: UTF-8 SRT subset; editable draft.
+- `replace-text`: Enter JSON such as `{"find":"old","replace":"new"}`. The operation uses the current draft, or a supplied SRT if the draft is empty, and returns an edited draft. Matches are case-sensitive and confined to individual cues. Timings are preserved. Save explicitly to export the changes.
 - `export-srt`: Validated SRT output.
 - `export-vtt` writes WebVTT from SRT input or an edited draft. Cue text is exported as literal text.
 - `transcribe`: For an ASR-enabled build, leave the parameter blank to use the [private English model pack](WHISPER_MODEL_PACK.md).

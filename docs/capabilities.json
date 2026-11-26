@@ -33,6 +33,13 @@
       "fixture_status": "not run"
     },
     {
+      "operation": "replace-text",
+      "description": "Exact find and replace inside transcript cues with original timing",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux draft timing and CLI replacement checks passed"
+    },
+    {
       "operation": "open-srt",
       "description": "UTF-8 SRT subset; editable draft",
       "status": "implemented-unverified",
