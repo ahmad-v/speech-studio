@@ -42,7 +42,7 @@ def main():
         extracted = temp / "extracted preview"
         if windows:
             archive = temp / f"{stem}.zip"
-            with zipfile.ZipFile(archive, "x", zipfile.ZIP_DEFLATED) as output:
+            with zipfile.ZipFile(archive, "x", zipfile.ZIP_DEFLATED, strict_timestamps=False) as output:
                 for path in sorted(bundle.rglob("*")):
                     if path.is_file():
                         output.write(path, path.relative_to(temp).as_posix())
