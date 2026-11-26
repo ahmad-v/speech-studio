@@ -8,6 +8,7 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"open-srt",label:"Open SRT",hint:"Load and validate UTF-8 SRT into editable draft."},
  Operation{id:"export-srt",label:"Save SRT",hint:"Validate editable draft, or load SRT from input if draft empty. New .srt output."},
  Operation{id:"export-txt",label:"Save text",hint:"Extract text from editable SRT draft or input SRT. New .txt output."},
+ Operation{id:"export-vtt",label:"Save WebVTT",hint:"Export an SRT file or edited SRT draft as plain-text WebVTT cues. Choose a new .vtt output."},
  #[cfg(feature="asr")]
  Operation{id:"transcribe",label:"Transcribe (experimental)",hint:"16 kHz mono PCM16 WAV. Parameter: absolute local Whisper model path | expected SHA256. CPU only; no model included."}];
 fn err(e: impl std::fmt::Display) -> Error {
@@ -126,6 +127,23 @@ fn render(segments: &[Segment]) -> String {
         })
         .collect()
 }
+fn render_vtt(segments: &[Segment], job: &Job) -> Result<String> {
+    use std::fmt::Write as _;
+    let mut content = String::from("WEBVTT\n\n");
+    for segment in segments {
+        job.check()?;
+        let start = stamp(segment.start).replace(',', ".");
+        let end = stamp(segment.end).replace(',', ".");
+        let text = segment
+            .text
+            .replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;");
+        writeln!(content, "{start} --> {end}\n{text}\n").expect("writing to a String cannot fail");
+    }
+    Ok(content)
+}
+
 #[cfg(feature = "asr")]
 fn transcribe(samples: &[f32], parameter: &str, j: &Job) -> Result<Vec<Segment>> {
     use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
@@ -145,6 +163,8 @@ fn transcribe(samples: &[f32], parameter: &str, j: &Job) -> Result<Vec<Segment>>
     if samples.iter().all(|s| s.abs() < 0.0001) {
         return Err(Error::input("Audio is silent; no transcription attempted"));
     }
+    // Keep native decoder output out of the console and application logs.
+    whisper_rs::install_logging_hooks();
     let mut cp = WhisperContextParameters::default();
     cp.use_gpu(false);
     let ctx = WhisperContext::new_from_buffer_with_params(&bytes, cp)
@@ -206,7 +226,7 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
                 s.len() as f64 / 16000.0
             );
         }
-        "open-srt" | "export-srt" | "export-txt" => {
+        "open-srt" | "export-srt" | "export-txt" | "export-vtt" => {
             let source = if r.operation == "open-srt" || r.draft.trim().is_empty() {
                 String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?
             } else {
@@ -217,17 +237,17 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
             if r.operation == "open-srt" {
                 out.draft = Some(normalized);
             } else {
-                let (ext, content) = if r.operation == "export-srt" {
-                    ("srt", normalized)
-                } else {
-                    (
+                let (ext, content) = match r.operation.as_str() {
+                    "export-srt" => ("srt", normalized),
+                    "export-vtt" => ("vtt", render_vtt(&segments, &j)?),
+                    _ => (
                         "txt",
                         segments
                             .iter()
                             .map(|s| s.text.as_str())
                             .collect::<Vec<_>>()
                             .join("\n"),
-                    )
+                    ),
                 };
                 if r.output.extension().and_then(|x| x.to_str()) != Some(ext) {
                     return Err(Error::input(format!("Expected .{ext} output")));
@@ -278,6 +298,25 @@ mod tests {
         )
         .unwrap();
         assert_eq!(std::fs::read_to_string(p).unwrap(), "Café\nWorld");
+    }
+    #[test]
+    fn webvtt_export_preserves_plain_text_and_timing() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("out.vtt");
+        handle(
+            Request {
+                operation: "export-vtt".into(),
+                output: output.clone(),
+                draft: "1\n00:00:00,500 --> 00:00:02,100\nCafé & <text> --> here".into(),
+                ..Request::default()
+            },
+            Job::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(output).unwrap(),
+            "WEBVTT\n\n00:00:00.500 --> 00:00:02.100\nCafé &amp; &lt;text&gt; --&gt; here\n\n"
+        );
     }
     #[test]
     fn audio() {

@@ -7,8 +7,9 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 | audio-info | 16 kHz mono signed PCM16 WAV | Linux fixture-tested |
 | open-srt | UTF-8 SRT subset; editable draft | Linux fixture-tested |
 | export-srt | Validated SRT output | Linux fixture-tested |
+| export-vtt | Plain-text WebVTT from SRT input or draft | Linux fixture-tested |
 | export-txt | Plain transcript text | Linux fixture-tested |
-| transcribe | Optional CPU whisper-rs adapter, no bundled model | Linux compile checked, inference unverified |
+| transcribe | Optional CPU whisper-rs adapter, no bundled model | Linux x64 offline inference smoke-tested |
 
 ## Known gaps
 

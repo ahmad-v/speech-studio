@@ -5,6 +5,7 @@ Development source only. Launch the GUI after compiling. Choose an operation, en
 - `audio-info`: 16 kHz mono signed PCM16 WAV.
 - `open-srt`: UTF-8 SRT subset; editable draft.
 - `export-srt`: Validated SRT output.
+- `export-vtt` writes WebVTT from SRT input or an edited draft. Cue text is exported as literal text.
 - `export-txt`: Plain transcript text.
 - `transcribe`: Optional CPU whisper-rs adapter, no bundled model.
 
