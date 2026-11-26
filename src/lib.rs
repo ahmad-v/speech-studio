@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 use std::{io::Cursor, path::Path};
 pub const OPERATIONS:&[Operation]=&[
  Operation{id:"audio-info",label:"Audio inspection",hint:"Inspect local 16 kHz mono PCM16 WAV; maximum 10 minutes."},
- Operation{id:"prepare-wav",label:"Prepare WAV for speech recognition",hint:"Convert 16, 32 or 48 kHz mono/stereo PCM16 WAV to a new 16 kHz mono WAV."},
+ Operation{id:"prepare-wav",label:"Prepare WAV for speech recognition",hint:"Convert 16, 32, 44.1 or 48 kHz mono/stereo PCM16 WAV to a new 16 kHz mono WAV."},
  Operation{id:"open-vtt",label:"Open WebVTT",hint:"Import plain-text WebVTT cues into the editable SRT draft."},
  Operation{id:"open-srt",label:"Open SRT",hint:"Load and validate UTF-8 SRT into editable draft."},
  Operation{id:"export-srt",label:"Save SRT",hint:"Validate editable draft, or load SRT from input if draft empty. New .srt output."},
@@ -50,12 +50,12 @@ fn prepare_wav(input: &Path, output: &Path, job: &Job) -> Result<u32> {
     let mut reader = hound::WavReader::new(Cursor::new(bytes)).map_err(err)?;
     let spec = reader.spec();
     if !matches!(spec.channels, 1 | 2)
-        || !matches!(spec.sample_rate, 16_000 | 32_000 | 48_000)
+        || !matches!(spec.sample_rate, 16_000 | 32_000 | 44_100 | 48_000)
         || spec.bits_per_sample != 16
         || spec.sample_format != hound::SampleFormat::Int
     {
         return Err(Error::input(
-            "Expected mono or stereo PCM16 WAV at 16, 32 or 48 kHz",
+            "Expected mono or stereo PCM16 WAV at 16, 32, 44.1 or 48 kHz",
         ));
     }
     let frames = reader.duration();
@@ -64,8 +64,10 @@ fn prepare_wav(input: &Path, output: &Path, job: &Job) -> Result<u32> {
             "Audio must be nonempty and no longer than 10 minutes",
         ));
     }
-    let ratio = spec.sample_rate / 16_000;
-    let output_frames = frames.div_ceil(ratio);
+    const TARGET_RATE: u32 = 16_000;
+    let channel_count = i64::from(spec.channels);
+    let output_frames =
+        (u64::from(frames) * u64::from(TARGET_RATE)).div_ceil(u64::from(spec.sample_rate)) as u32;
     write_new(output, |file| {
         let mut writer = hound::WavWriter::new(
             file,
@@ -78,21 +80,37 @@ fn prepare_wav(input: &Path, output: &Path, job: &Job) -> Result<u32> {
         )
         .map_err(err)?;
         let mut samples = reader.samples::<i16>();
-        for frame in (0..frames).step_by(ratio as usize) {
-            if frame % (ratio * 1024) == 0 {
+        // A source frame spans TARGET_RATE ticks and an output frame spans sample_rate ticks.
+        // Weight each sample by its overlap with the output frame before averaging.
+        let mut filled = 0u32;
+        let mut weighted_sum = 0i64;
+        for frame in 0..frames {
+            if frame % 1024 == 0 {
                 job.check()?;
             }
-            let count = (frames - frame).min(ratio) * u32::from(spec.channels);
-            let mut sum = 0i32;
-            for _ in 0..count {
-                let sample = samples
-                    .next()
-                    .ok_or_else(|| Error::input("Incomplete PCM frame"))?
-                    .map_err(err)?;
-                sum += i32::from(sample);
+            let mut channel_sum = 0i64;
+            for _ in 0..spec.channels {
+                channel_sum += i64::from(
+                    samples
+                        .next()
+                        .ok_or_else(|| Error::input("Incomplete PCM frame"))?
+                        .map_err(err)?,
+                );
             }
+            let overlap = TARGET_RATE.min(spec.sample_rate - filled);
+            weighted_sum += channel_sum * i64::from(overlap);
+            filled += overlap;
+            if filled == spec.sample_rate {
+                writer
+                    .write_sample((weighted_sum / (i64::from(filled) * channel_count)) as i16)
+                    .map_err(err)?;
+                filled = TARGET_RATE - overlap;
+                weighted_sum = channel_sum * i64::from(filled);
+            }
+        }
+        if filled > 0 {
             writer
-                .write_sample((sum / count as i32) as i16)
+                .write_sample((weighted_sum / (i64::from(filled) * channel_count)) as i16)
                 .map_err(err)?;
         }
         if samples.next().is_some() {
@@ -407,6 +425,7 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
         "prepare-wav" => {
             let frames = prepare_wav(&r.input, &r.output, &j)?;
             out.preview = format!("Prepared {frames} mono samples at 16,000 Hz");
+            out.warnings.push("WAV preparation uses weighted averaging for downsampling. High-frequency content can alias.".into());
             out.written = Some(r.output);
         }
         "audio-info" => {
@@ -569,6 +588,34 @@ mod tests {
                 .unwrap(),
             vec![1000, 3000]
         );
+    }
+
+    #[test]
+    fn prepares_44_1_khz_using_fractional_frame_overlap() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("in.wav");
+        let output = dir.path().join("out.wav");
+        let mut writer = hound::WavWriter::create(
+            &input,
+            hound::WavSpec {
+                channels: 1,
+                sample_rate: 44_100,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )
+        .unwrap();
+        for sample in [0i16, 0, 4410] {
+            writer.write_sample(sample).unwrap();
+        }
+        writer.finalize().unwrap();
+        assert_eq!(prepare_wav(&input, &output, &Job::new()).unwrap(), 2);
+        let mut result = hound::WavReader::open(output).unwrap();
+        let samples = result
+            .samples::<i16>()
+            .collect::<std::result::Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(samples, [1210, 4410]);
     }
 
     #[test]

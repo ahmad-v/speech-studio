@@ -12,4 +12,4 @@ When preparing a combined portable bundle, build with the default features plus 
 
 The pack contains model data, provenance and the model's MIT license. The CPU inference engine is provided by the ASR-enabled application build. The baseline installer still omits ASR. The application does not fetch models during use.
 
-The pinned model previously passed a Linux offline smoke test using the explicit model path. Application-relative lookup and ASR-enabled installation still need execution during the build and verification phase.
+Both explicit and app-relative model lookup have Linux x86_64 offline smoke evidence. The app-relative test extracted the generated pack alongside a locked ASR-enabled CLI build, transcribed a short reference WAV into a two-cue draft without passing a model path, and exported that draft via the SRT route. Tracing recorded no socket or connect calls while socket creation was blocked. A truncated model copy failed the SHA-256 check. This evidence applies to a staged local binary. Hardware, clean-device, ASR-enabled installer and broad model quality checks remain pending.

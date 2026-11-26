@@ -9,14 +9,14 @@
       "description": "Import plain-text WebVTT cues into an SRT draft",
       "status": "implemented-unverified",
       "targets": [],
-      "fixture_status": "pending compilation"
+      "fixture_status": "Linux x86_64 WebVTT import fixture passed"
     },
     {
       "operation": "prepare-wav",
       "description": "PCM16 WAV preparation for speech recognition",
       "status": "implemented-unverified",
       "targets": [],
-      "fixture_status": "pending compilation"
+      "fixture_status": "Linux x86_64 integer and fractional downsampling fixtures passed"
     },
     {
       "operation": "export-vtt",
@@ -58,7 +58,7 @@
       "description": "Optional CPU Whisper adapter with private Tiny English pack discovery",
       "status": "implemented-unverified",
       "targets": ["x86_64-unknown-linux-gnu"],
-      "fixture_status": "One English clip and silence smoke-tested offline on Linux x64"
+      "fixture_status": "Linux x86_64 offline app-relative English pack smoke passed"
     }
   ]
 }
