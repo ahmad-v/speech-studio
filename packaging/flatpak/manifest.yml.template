@@ -1,0 +1,24 @@
+# Template only. Pin reviewed runtime/SDK commits, Rust extension and cargo vendor sources before build.
+app-id: org.localwright.SpeechStudio
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: speech-studio
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+modules:
+  - name: speech-studio
+    buildsystem: simple
+    build-commands:
+      - cargo build --offline --locked --release
+      - install -Dm755 target/release/speech-studio /app/bin/speech-studio
+      - install -Dm644 packaging/linux/org.localwright.SpeechStudio.desktop /app/share/applications/org.localwright.SpeechStudio.desktop
+      - install -Dm644 packaging/linux/org.localwright.SpeechStudio.metainfo.xml /app/share/metainfo/org.localwright.SpeechStudio.metainfo.xml
+      - install -Dm644 packaging/linux/org.localwright.SpeechStudio.svg /app/share/icons/hicolor/scalable/apps/org.localwright.SpeechStudio.svg
+    sources: [] # Replace with exact source commits and verified vendor manifest; do not enable build network.

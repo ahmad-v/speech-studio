@@ -1,0 +1,70 @@
+{
+  "name": "speech-studio",
+  "title": "Speech Studio",
+  "app_id": "org.localwright.SpeechStudio",
+  "approved_identity": false,
+  "package_version": "0.1.0~alpha1",
+  "targets": [
+    {
+      "runner": "windows-2025",
+      "target": "x86_64-pc-windows-msvc",
+      "formats": [
+        "exe",
+        "msi",
+        "zip"
+      ],
+      "baseline": [
+        "zip"
+      ]
+    },
+    {
+      "runner": "windows-11-arm",
+      "target": "aarch64-pc-windows-msvc",
+      "formats": [
+        "exe",
+        "msi",
+        "zip"
+      ],
+      "baseline": [
+        "zip"
+      ]
+    },
+    {
+      "runner": "ubuntu-24.04",
+      "target": "x86_64-unknown-linux-gnu",
+      "formats": [
+        "deb",
+        "rpm",
+        "appimage",
+        "flatpak"
+      ],
+      "baseline": [
+        "deb"
+      ]
+    },
+    {
+      "runner": "ubuntu-24.04-arm",
+      "target": "aarch64-unknown-linux-gnu",
+      "formats": [
+        "deb",
+        "rpm",
+        "appimage",
+        "flatpak"
+      ],
+      "baseline": [
+        "deb"
+      ]
+    },
+    {
+      "runner": "macos-15",
+      "target": "aarch64-apple-darwin",
+      "formats": [
+        "dmg"
+      ],
+      "baseline": [
+        "dmg"
+      ]
+    }
+  ],
+  "maintainer": null
+}

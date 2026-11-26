@@ -1,0 +1,16 @@
+target,format,status,verification
+x86_64-pc-windows-msvc,exe,planned,not run
+x86_64-pc-windows-msvc,msi,implemented-unverified,not run
+x86_64-pc-windows-msvc,zip,implemented-unverified,not run
+aarch64-pc-windows-msvc,exe,planned,not run
+aarch64-pc-windows-msvc,msi,implemented-unverified,not run
+aarch64-pc-windows-msvc,zip,implemented-unverified,not run
+x86_64-unknown-linux-gnu,deb,implemented-unverified,not run
+x86_64-unknown-linux-gnu,rpm,implemented-unverified,not run
+x86_64-unknown-linux-gnu,appimage,implemented-unverified,not run
+x86_64-unknown-linux-gnu,flatpak,planned,not run
+aarch64-unknown-linux-gnu,deb,implemented-unverified,not run
+aarch64-unknown-linux-gnu,rpm,implemented-unverified,not run
+aarch64-unknown-linux-gnu,appimage,implemented-unverified,not run
+aarch64-unknown-linux-gnu,flatpak,planned,not run
+aarch64-apple-darwin,dmg,implemented-unverified,not run

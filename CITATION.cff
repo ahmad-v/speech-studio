@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "Please cite a verified release of this software. Provisional project-level attribution only; replace with real authors before publication."
+title: "Speech Studio"
+type: software
+version: "0.1.0-alpha.1"
+authors:
+  - name: "Speech Studio project (provisional attribution)"
+license:
+  - MIT
+  - Apache-2.0
+keywords:
+  - offline
+  - desktop
+  - Rust

@@ -1,0 +1,7 @@
+<!-- Candidate only; verify WiX Burn native ARM64 and x64 and reviewed extension version. Not built. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:bal="http://wixtoolset.org/schemas/v4/wxs/bal">
+  <Bundle Name="Speech Studio" Manufacturer="Development snapshot" Version="0.1.0.0" UpgradeCode="a59675cf-5791-590f-abb5-bcb4dbf0e3fe">
+    <BootstrapperApplication><bal:WixStandardBootstrapperApplication Theme="hyperlinkLicense" LicenseUrl="" /></BootstrapperApplication>
+    <Chain><MsiPackage SourceFile="$(var.MsiPath)" Compressed="yes" /></Chain>
+  </Bundle>
+</Wix>

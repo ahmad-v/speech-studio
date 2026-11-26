@@ -1,0 +1,2 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application"><id>org.localwright.SpeechStudio</id><name>Speech Studio</name><summary>Local speech and transcript workbench</summary><metadata_license>CC0-1.0</metadata_license><project_license>MIT OR Apache-2.0</project_license><description><p>Experimental offline desktop software. No verified release yet.</p></description><launchable type="desktop-id">org.localwright.SpeechStudio.desktop</launchable></component>

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Speech Studio
+Exec=speech-studio
+Icon=org.localwright.SpeechStudio
+Terminal=false
+Categories=Utility;

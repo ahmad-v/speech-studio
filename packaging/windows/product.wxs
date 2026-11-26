@@ -1,0 +1,19 @@
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="Speech Studio" Manufacturer="Development snapshot" Version="0.1.0" UpgradeCode="1dc88b15-d91b-5ff9-823e-b20f100bcd18" Scope="perUser">
+    <MajorUpgrade DowngradeErrorMessage="A newer version is installed." />
+    <MediaTemplate EmbedCab="yes" />
+    <StandardDirectory Id="LocalAppDataFolder"><Directory Id="INSTALLFOLDER" Name="speech-studio">
+      <Component Id="App" Guid="*"><File Id="MainExe" Source="$(var.Payload)\$(var.Executable)" KeyPath="yes" /></Component>
+        <Component Id="Doc0" Guid="*"><File Source="$(var.Payload)\README.md" KeyPath="yes" /></Component>
+        <Component Id="Doc1" Guid="*"><File Source="$(var.Payload)\LICENSE" KeyPath="yes" /></Component>
+        <Component Id="Doc2" Guid="*"><File Source="$(var.Payload)\LICENSE-MIT" KeyPath="yes" /></Component>
+        <Component Id="Doc3" Guid="*"><File Source="$(var.Payload)\LICENSE-APACHE" KeyPath="yes" /></Component>
+        <Component Id="Doc4" Guid="*"><File Source="$(var.Payload)\THIRD_PARTY_NOTICES.md" KeyPath="yes" /></Component>
+        <Component Id="Doc5" Guid="*"><File Source="$(var.Payload)\CITATION.cff" KeyPath="yes" /></Component>
+        <Component Id="Doc6" Guid="*"><File Source="$(var.Payload)\MANUAL.md" KeyPath="yes" /></Component>
+        <Component Id="Doc7" Guid="*"><File Source="$(var.Payload)\capabilities.json" KeyPath="yes" /></Component>
+        <Component Id="Doc8" Guid="*"><File Source="$(var.Payload)\PAYLOAD_STATUS.txt" KeyPath="yes" /></Component>
+    </Directory></StandardDirectory>
+    <Feature Id="Main" Title="Speech Studio" Level="1"><ComponentRef Id="App" /><ComponentRef Id="Doc0" /><ComponentRef Id="Doc1" /><ComponentRef Id="Doc2" /><ComponentRef Id="Doc3" /><ComponentRef Id="Doc4" /><ComponentRef Id="Doc5" /><ComponentRef Id="Doc6" /><ComponentRef Id="Doc7" /><ComponentRef Id="Doc8" /></Feature>
+  </Package>
+</Wix>

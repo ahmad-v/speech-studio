@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "project": "speech-studio",
+  "version": "0.1.0-alpha.1",
+  "verified_capabilities": [],
+  "development_routes": [
+    {
+      "operation": "audio-info",
+      "description": "16 kHz mono signed PCM16 WAV",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "not run"
+    },
+    {
+      "operation": "open-srt",
+      "description": "UTF-8 SRT subset; editable draft",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "not run"
+    },
+    {
+      "operation": "export-srt",
+      "description": "Validated SRT output",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "not run"
+    },
+    {
+      "operation": "export-txt",
+      "description": "Plain transcript text",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "not run"
+    },
+    {
+      "operation": "transcribe",
+      "description": "Optional CPU whisper-rs adapter, no bundled model",
+      "status": "blocked",
+      "targets": [],
+      "fixture_status": "not run"
+    }
+  ]
+}
