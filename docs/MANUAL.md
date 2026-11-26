@@ -22,3 +22,13 @@ WAV preparation downmixes and uses weighted frame averaging for supported PCM16 
 
 - `shift-timing`: Enter a signed offset in milliseconds, such as `-200`. The operation returns a new SRT draft with the same cue text and durations. A shift outside the SRT timestamp range fails. Export the draft to save it.
 - `waveform-svg`: Supply a 16 kHz mono PCM16 WAV and a new SVG path. The export shows peak amplitudes and duration for clips up to ten minutes. Use Prepare WAV first for other supported PCM16 input rates.
+
+## Additional operations
+
+- `scale-timing`. Enter a whole percentage from 1 to 1000. For example, 105 makes times 5% later relative to zero. Times are rounded to the nearest millisecond.
+- `trim-cues`. Enter `start_ms,end_ms`. Intersecting cues are clipped to the range, and remaining times keep the original time origin.
+- `split-cue`. Enter JSON such as `{"cue":1,"at_ms":2500,"first":"First part","second":"Second part"}`. The split point must be inside the cue.
+- `merge-cues`. Enter first and last cue numbers, such as `2,4`. Text is separated by newlines and the merged cue ends at the latest selected end time.
+- `delete-cue`. Enter the 1-based cue number. At least one cue must remain.
+
+The five cue edits return an SRT draft. You can also supply a new .srt output path to save the edit immediately.

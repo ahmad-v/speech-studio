@@ -4,6 +4,11 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 
 | Operation | Scope | Status |
 |---|---|---|
+| scale-timing | Scale cue times from zero | Linux fixture-tested |
+| trim-cues | Crop cues to a time interval | Linux fixture-tested |
+| split-cue | Split a cue at an exact millisecond | Linux fixture-tested |
+| merge-cues | Join consecutive cue text and timing | Linux fixture-tested |
+| delete-cue | Remove and renumber a selected cue | Linux fixture-tested |
 | shift-timing | Shift all subtitle cues by signed milliseconds | Linux fixture and CLI-tested |
 | waveform-svg | Export a peak SVG from mono 16 kHz PCM16 WAV | Linux fixture and CLI-tested |
 | open-vtt | Import plain-text WebVTT cues into an SRT draft | Linux fixture-tested |

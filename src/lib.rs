@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+mod cue_edit;
 use localwright_core::*;
 #[cfg(feature = "asr")]
 use sha2::{Digest, Sha256};
@@ -12,6 +13,11 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"open-srt",label:"Open SRT",hint:"Load and validate UTF-8 SRT into editable draft."},
  Operation{id:"export-srt",label:"Save SRT",hint:"Validate editable draft, or load SRT from input if draft empty. New .srt output."},
  Operation{id:"replace-text",label:"Find and replace transcript text",hint:"Enter JSON with find and replace. Uses the SRT file or current draft and preserves timestamps."},
+ Operation{id:"scale-timing",label:"Scale cue timing",hint:"Enter a whole percentage, e.g. 105, to scale all cue times from zero."},
+ Operation{id:"trim-cues",label:"Trim cues to a time range",hint:"Enter start_ms,end_ms. Clips overlapping cues, preserving the original time origin."},
+ Operation{id:"split-cue",label:"Split a subtitle cue",hint:"Enter JSON with cue, at_ms, first and second. Cue numbers start at 1."},
+ Operation{id:"merge-cues",label:"Merge a range of cues",hint:"Enter first,last cue numbers. Combines their text and timing span."},
+ Operation{id:"delete-cue",label:"Delete a subtitle cue",hint:"Enter the 1-based cue number to remove from the draft."},
  Operation{id:"shift-timing",label:"Shift subtitle timing",hint:"Enter a signed offset in milliseconds. Uses the current draft or SRT input and returns a new draft."},
  Operation{id:"export-json",label:"Save transcript JSON",hint:"Export an SRT file or the edited draft with millisecond timestamps. Choose a new .json file."},
  Operation{id:"export-txt",label:"Save text",hint:"Extract text from editable SRT draft or input SRT. New .txt output."},
@@ -591,7 +597,8 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
             out.warnings
                 .push("Cue identifiers and NOTE blocks are omitted.".into());
         }
-        "replace-text" | "shift-timing" => {
+        "replace-text" | "shift-timing" | "scale-timing" | "trim-cues" | "split-cue"
+        | "merge-cues" | "delete-cue" => {
             let source = if r.draft.trim().is_empty() {
                 String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?
             } else {
@@ -601,9 +608,25 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
             if r.operation == "shift-timing" {
                 out.preview = format!("Shifted {} cue timings", segments.len());
                 out.draft = Some(shift_timing(segments, &r.parameter, &j)?);
-            } else {
+            } else if r.operation == "replace-text" {
                 let (draft, count) = replace_text(segments, &r.parameter, &j)?;
                 out.preview = format!("Replaced {count} occurrences in the draft");
+                out.draft = Some(draft);
+            } else {
+                let draft = cue_edit::edit(&r.operation, segments, &r.parameter, &j)?;
+                if !r.output.as_os_str().is_empty() {
+                    if r.output
+                        .extension()
+                        .and_then(|extension| extension.to_str())
+                        != Some("srt")
+                    {
+                        return Err(Error::input("Expected .srt output"));
+                    }
+                    j.check()?;
+                    write_bytes(&r.output, draft.as_bytes())?;
+                    out.written = Some(r.output);
+                }
+                out.preview = "Updated subtitle cues".into();
                 out.draft = Some(draft);
             }
         }

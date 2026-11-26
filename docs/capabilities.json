@@ -5,6 +5,41 @@
   "verified_capabilities": [],
   "development_routes": [
     {
+      "operation": "scale-timing",
+      "description": "Scale cue times from zero",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux integration fixture passed"
+    },
+    {
+      "operation": "trim-cues",
+      "description": "Crop cues to a time interval",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux integration fixture passed"
+    },
+    {
+      "operation": "split-cue",
+      "description": "Split a cue at an exact millisecond",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux integration fixture passed"
+    },
+    {
+      "operation": "merge-cues",
+      "description": "Join consecutive cue text and timing",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux integration fixture passed"
+    },
+    {
+      "operation": "delete-cue",
+      "description": "Remove and renumber a selected cue",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux integration fixture passed"
+    },
+    {
       "operation": "waveform-svg",
       "description": "Export a peak SVG from mono 16 kHz PCM16 WAV",
       "status": "implemented-unverified",
