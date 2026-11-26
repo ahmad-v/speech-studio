@@ -12,10 +12,11 @@ def sha256(path):
         return hashlib.file_digest(stream, "sha256").hexdigest()
 
 
-def collect(repo, bundle, target, binary):
+def collect(repo, bundle, target, binary, features=()):
+    feature_args = ["--features", ",".join(features)] if features else []
     metadata = json.loads(subprocess.check_output(
         [os.environ.get("CARGO", "cargo"), "metadata", "--locked",
-         "--filter-platform", target, "--format-version", "1"],
+         "--filter-platform", target, "--format-version", "1", *feature_args],
         cwd=repo, encoding="utf-8",
     ))
     resolve = metadata["resolve"]
@@ -107,6 +108,13 @@ def collect(repo, bundle, target, binary):
                     shutil.copy2(supplemental_dir / name, dest)
                     icon_evidence["notice_files"].append(dest.relative_to(bundle).as_posix())
             asset_review.append(icon_evidence)
+        if package["name"] == "whisper-rs-sys":
+            engine_license = package_root / "whisper.cpp/LICENSE"
+            if engine_license.is_file():
+                copy_root.mkdir(exist_ok=True)
+                dest = copy_root / "WHISPER-CPP-LICENSE"
+                shutil.copy2(engine_license, dest)
+                copied.append(dest.relative_to(bundle).as_posix())
         entries.append({
             "name": package["name"],
             "version": package["version"],
@@ -122,7 +130,8 @@ def collect(repo, bundle, target, binary):
         json.dumps({
             "schema_version": 1,
             "target": target,
-            "configuration": "Cargo default features with normal and build dependency edges",
+            "configuration": "Cargo default features plus listed features, normal and build dependency edges",
+            "extra_cargo_features": list(features),
             "cargo_lock_sha256": sha256(repo / "Cargo.lock"),
             "executable_sha256": sha256(binary),
             "packages": entries,

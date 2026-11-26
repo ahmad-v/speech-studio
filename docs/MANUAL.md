@@ -7,9 +7,10 @@ Development source only. Launch the GUI after compiling. Choose an operation, en
 - `open-srt`: UTF-8 SRT subset; editable draft.
 - `export-srt`: Validated SRT output.
 - `export-vtt` writes WebVTT from SRT input or an edited draft. Cue text is exported as literal text.
+- `transcribe`: For an ASR-enabled build, leave the parameter blank to use the [private English model pack](WHISPER_MODEL_PACK.md).
 - `export-txt`: Plain transcript text.
 - `transcribe`: Optional CPU whisper-rs adapter, no bundled model.
 
-Limitations: No redistributed ASR model or reference speech. Optional native inference source only, not enabled in default build. Explicit local model path and expected SHA-256 required; user hash is integrity, not authenticity. Cancellation cannot interrupt inference itself. No playback, resampling, waveform, language accuracy, WER, translation, diarization, TTS or model pack. SRT supports strict basic timecodes and sequential indices; overlapping segments allowed.
+Limitations: No redistributed ASR model or reference speech. Optional native inference source only, not enabled in default build. Private Tiny English pack or explicit local model path with expected SHA-256 required; user hash is integrity, not authenticity. Cancellation cannot interrupt inference itself. No playback, resampling, waveform, language accuracy, WER, translation, diarization, TTS or model pack. SRT supports strict basic timecodes and sequential indices; overlapping segments allowed.
 
 No output overwrite is allowed. No accounts, ads, telemetry or runtime downloads are intended. Do not use this unverified snapshot with valuable or hostile input. Citation and donations are voluntary.

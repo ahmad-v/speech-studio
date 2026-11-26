@@ -48,7 +48,7 @@
     },
     {
       "operation": "transcribe",
-      "description": "Optional CPU whisper-rs adapter, no bundled model",
+      "description": "Optional CPU Whisper adapter with private Tiny English pack discovery",
       "status": "implemented-unverified",
       "targets": ["x86_64-unknown-linux-gnu"],
       "fixture_status": "One English clip and silence smoke-tested offline on Linux x64"

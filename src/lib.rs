@@ -11,7 +11,7 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"export-txt",label:"Save text",hint:"Extract text from editable SRT draft or input SRT. New .txt output."},
  Operation{id:"export-vtt",label:"Save WebVTT",hint:"Export an SRT file or edited SRT draft as plain-text WebVTT cues. Choose a new .vtt output."},
  #[cfg(feature="asr")]
- Operation{id:"transcribe",label:"Transcribe (experimental)",hint:"16 kHz mono PCM16 WAV. Parameter: absolute local Whisper model path | expected SHA256. CPU only; no model included."}];
+ Operation{id:"transcribe",label:"Transcribe (experimental)",hint:"16 kHz mono PCM16 WAV. Leave the parameter blank for the private English pack, or supply absolute model path | SHA256. CPU inference."}];
 fn err(e: impl std::fmt::Display) -> Error {
     Error::input(e.to_string())
 }
@@ -208,24 +208,67 @@ fn render_vtt(segments: &[Segment], job: &Job) -> Result<String> {
 }
 
 #[cfg(feature = "asr")]
-fn transcribe(samples: &[f32], parameter: &str, j: &Job) -> Result<Vec<Segment>> {
-    use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
-    let (path, expected) = parameter
-        .rsplit_once('|')
-        .ok_or_else(|| Error::input("Expected model path | SHA256"))?;
-    let p = Path::new(path.trim());
-    if !p.is_absolute() {
-        return Err(Error::input("Model path must be absolute"));
+fn model_bytes(parameter: &str) -> Result<(Vec<u8>, bool)> {
+    let private = parameter.trim().is_empty();
+    let manifest: serde_json::Value =
+        serde_json::from_str(include_str!("../packaging/whisper-model/manifest.json"))?;
+    let (path, expected, limit) = if private {
+        let id = manifest["id"].as_str().expect("model manifest has an ID");
+        let file = manifest["file"]
+            .as_str()
+            .expect("model manifest has a filename");
+        let executable = std::env::current_exe()?.canonicalize()?;
+        let path = executable
+            .parent()
+            .ok_or_else(|| Error::engine("Application directory unavailable"))?
+            .join("engines")
+            .join(id)
+            .join(file);
+        let canonical = path
+            .canonicalize()
+            .map_err(|_| Error::input("Private Whisper Tiny English model pack is missing"))?;
+        if canonical != path {
+            return Err(Error::input("Private Whisper model path must not redirect"));
+        }
+        (
+            path,
+            manifest["sha256"]
+                .as_str()
+                .expect("model manifest has a SHA-256"),
+            manifest["bytes"]
+                .as_u64()
+                .expect("model manifest has a length"),
+        )
+    } else {
+        let (path, expected) = parameter
+            .rsplit_once('|')
+            .ok_or_else(|| Error::input("Expected model path | SHA256"))?;
+        let path = Path::new(path.trim());
+        if !path.is_absolute() {
+            return Err(Error::input("Model path must be absolute"));
+        }
+        (path.to_path_buf(), expected.trim(), 512 * 1024 * 1024)
+    };
+    if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(Error::input("Expected a 64-digit model SHA-256"));
     }
-    let bytes = read_bounded(p, 512 * 1024 * 1024)?;
+    let bytes = read_bounded(&path, limit)?;
     let actual = format!("{:x}", Sha256::digest(&bytes));
-    if !actual.eq_ignore_ascii_case(expected.trim()) {
+    if !actual.eq_ignore_ascii_case(expected) {
         return Err(Error::input("Model SHA256 mismatch"));
     }
+    Ok((bytes, private))
+}
+
+#[cfg(feature = "asr")]
+fn transcribe(samples: &[f32], parameter: &str, j: &Job) -> Result<Vec<Segment>> {
+    use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
     j.check()?;
     if samples.iter().all(|s| s.abs() < 0.0001) {
         return Err(Error::input("Audio is silent; no transcription attempted"));
     }
+    let (bytes, private) = model_bytes(parameter)?;
+    j.check()?;
     // Keep native decoder output out of the console and application logs.
     whisper_rs::install_logging_hooks();
     let mut cp = WhisperContextParameters::default();
@@ -237,7 +280,7 @@ fn transcribe(samples: &[f32], parameter: &str, j: &Job) -> Result<Vec<Segment>>
         .map_err(|e| Error::engine(e.to_string()))?;
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_n_threads(2);
-    params.set_language(Some("auto"));
+    params.set_language(Some(if private { "en" } else { "auto" }));
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
