@@ -8,12 +8,12 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-localwright-core = { path = "../localwright/crates/localwright-core", version = "=0.1.0-alpha.1" }
-localwright-ui = { path = "../localwright/crates/localwright-ui", version = "=0.1.0-alpha.1", optional = true }
+localwright-core = { git = "https://github.com/ahmad-v/localwright", rev = "3522b18eb7600eda67055a89e815150b2b0b7acb", version = "=0.1.0-alpha.1" }
+localwright-ui = { git = "https://github.com/ahmad-v/localwright", rev = "3522b18eb7600eda67055a89e815150b2b0b7acb", version = "=0.1.0-alpha.1", optional = true }
 serde_json = "=1.0.140"
 hound = "=3.5.1"
 sha2 = "=0.10.8"
-whisper-rs = { version = "=0.14.0", optional = true }
+whisper-rs = { version = "=0.14.4", optional = true }
 
 
 [features]

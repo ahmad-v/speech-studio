@@ -1,6 +1,5 @@
 {
-  "repository": null,
-  "revision": null,
-  "required_version": "0.1.0-alpha.1",
-  "status": "owner approval and real commit required"
+  "repository": "https://github.com/ahmad-v/localwright",
+  "revision": "3522b18eb7600eda67055a89e815150b2b0b7acb",
+  "required_version": "0.1.0-alpha.1"
 }

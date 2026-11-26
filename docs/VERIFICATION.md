@@ -1,10 +1,7 @@
 # Verification evidence
 
-Static checks performed on source artifacts only:
+The integration run used Rust 1.88.0 on Linux x86_64 with Localwright pinned to the revision in `Cargo.lock`. Formatting, locked all-target checking, default and headless tests, strict Clippy, and CLI help passed.
 
-- speech-studio: specification exact; TOML/JSON/YAML/CFF syntax, Python AST, XML/SVG/WiX well-formedness passed (not schema validation).
-- speech-studio: exact sibling dependency paths/version and 15 unique packaging rows passed.
-- Speech fixture: Python wave independently verified 1 s mono 16 kHz PCM16 silence.
-- speech-studio: packaging architecture helper accepted synthetic ARM64 PE header and rejected x64 mismatch (not an executable test).
+The WAV and SRT tests passed. Python wave confirmed the CLI duration and sample count, and the subtitle export preserved the fixture text. The optional ASR adapter compiled on Linux. Model inference, accuracy and cancellation during inference remain open.
 
-No Rust compilation or runtime tests executed. Cargo/rustc not installed; DNS lookup of static.rust-lang.org and index.crates.io failed. CI, package builds, signing, SBOM, license and security review remain pending.
+The GitHub workflow defines five platform checks. Device tests and installer verification remain open.
