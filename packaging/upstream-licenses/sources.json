@@ -116,5 +116,16 @@
         "url": "https://raw.githubusercontent.com/ahmad-v/localwright/019bdc79535280d4f1fa723878192849fe8fb5dc/LICENSE-APACHE"
       }
     ]
+  },
+  {
+    "name": "drm-fourcc",
+    "version": "2.2.0",
+    "revision": "7b9f80060ffd4b35cd236437e65a17fb517d163c",
+    "files": [
+      {
+        "name": "DRM-LICENSE",
+        "url": "https://raw.githubusercontent.com/dzfranklin/drm-fourcc-rs/bb1b81f184650e1418e1dce512e34071675206d7/LICENSE"
+      }
+    ]
   }
 ]

@@ -92,11 +92,21 @@ def collect(repo, bundle, target, binary):
         asset_review = []
         icon_font = package_root / "fonts/Iced-Icons.ttf"
         if package["name"] == "iced_graphics" and icon_font.is_file():
-            asset_review.append({
+            icon_digest = sha256(icon_font)
+            icon_evidence = {
                 "path": "fonts/Iced-Icons.ttf",
-                "sha256": sha256(icon_font),
-                "status": "Original glyph licenses and notices require review",
-            })
+                "sha256": icon_digest,
+                "status": "Review required for this font version",
+            }
+            if icon_digest == "89ce457409339061b0333d2ed374e4e3666a3c673304505963078d67b61efb77":
+                icon_evidence["status"] = "Fontello and Font Awesome glyph attribution recorded"
+                copy_root.mkdir(exist_ok=True)
+                icon_evidence["notice_files"] = []
+                for name in ("ICED-ICON-NOTICE.txt", "OFL-1.1.txt"):
+                    dest = copy_root / name
+                    shutil.copy2(supplemental_dir / name, dest)
+                    icon_evidence["notice_files"].append(dest.relative_to(bundle).as_posix())
+            asset_review.append(icon_evidence)
         entries.append({
             "name": package["name"],
             "version": package["version"],
