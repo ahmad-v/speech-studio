@@ -2,14 +2,14 @@
 name = "speech-studio"
 version = "0.1.0-alpha.1"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 description = "Local speech and transcript workbench"
 license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-localwright-core = { git = "https://github.com/ahmad-v/localwright", rev = "019bdc79535280d4f1fa723878192849fe8fb5dc", version = "=0.1.0-alpha.1" }
-localwright-ui = { git = "https://github.com/ahmad-v/localwright", rev = "019bdc79535280d4f1fa723878192849fe8fb5dc", version = "=0.1.0-alpha.1", optional = true }
+localwright-core = { git = "https://github.com/ahmad-v/localwright", rev = "b18f5303ca5e7684881ccce9951cbee8b25dea82", version = "=0.1.0" }
+localwright-ui = { git = "https://github.com/ahmad-v/localwright", rev = "b18f5303ca5e7684881ccce9951cbee8b25dea82", version = "=0.1.0", optional = true }
 serde_json = "=1.0.140"
 hound = "=3.5.1"
 sha2 = "=0.10.8"

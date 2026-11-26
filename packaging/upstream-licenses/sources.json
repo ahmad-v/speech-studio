@@ -89,31 +89,31 @@
   },
   {
     "name": "localwright-core",
-    "version": "0.1.0-alpha.1",
-    "revision": "019bdc79535280d4f1fa723878192849fe8fb5dc",
+    "version": "0.1.0",
+    "revision": "b18f5303ca5e7684881ccce9951cbee8b25dea82",
     "files": [
       {
         "name": "LOCALWRIGHT-LICENSE-MIT",
-        "url": "https://raw.githubusercontent.com/ahmad-v/localwright/019bdc79535280d4f1fa723878192849fe8fb5dc/LICENSE-MIT"
+        "url": "https://raw.githubusercontent.com/ahmad-v/localwright/b18f5303ca5e7684881ccce9951cbee8b25dea82/LICENSE-MIT"
       },
       {
         "name": "LOCALWRIGHT-LICENSE-APACHE",
-        "url": "https://raw.githubusercontent.com/ahmad-v/localwright/019bdc79535280d4f1fa723878192849fe8fb5dc/LICENSE-APACHE"
+        "url": "https://raw.githubusercontent.com/ahmad-v/localwright/b18f5303ca5e7684881ccce9951cbee8b25dea82/LICENSE-APACHE"
       }
     ]
   },
   {
     "name": "localwright-ui",
-    "version": "0.1.0-alpha.1",
-    "revision": "019bdc79535280d4f1fa723878192849fe8fb5dc",
+    "version": "0.1.0",
+    "revision": "b18f5303ca5e7684881ccce9951cbee8b25dea82",
     "files": [
       {
         "name": "LOCALWRIGHT-LICENSE-MIT",
-        "url": "https://raw.githubusercontent.com/ahmad-v/localwright/019bdc79535280d4f1fa723878192849fe8fb5dc/LICENSE-MIT"
+        "url": "https://raw.githubusercontent.com/ahmad-v/localwright/b18f5303ca5e7684881ccce9951cbee8b25dea82/LICENSE-MIT"
       },
       {
         "name": "LOCALWRIGHT-LICENSE-APACHE",
-        "url": "https://raw.githubusercontent.com/ahmad-v/localwright/019bdc79535280d4f1fa723878192849fe8fb5dc/LICENSE-APACHE"
+        "url": "https://raw.githubusercontent.com/ahmad-v/localwright/b18f5303ca5e7684881ccce9951cbee8b25dea82/LICENSE-APACHE"
       }
     ]
   },
