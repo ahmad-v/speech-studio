@@ -4,6 +4,7 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 
 | Operation | Scope | Status |
 |---|---|---|
+| prepare-wav | PCM16 WAV preparation for speech recognition | implemented-unverified |
 | audio-info | 16 kHz mono signed PCM16 WAV | Linux fixture-tested |
 | open-srt | UTF-8 SRT subset; editable draft | Linux fixture-tested |
 | export-srt | Validated SRT output | Linux fixture-tested |

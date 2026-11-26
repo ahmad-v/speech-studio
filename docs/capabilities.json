@@ -5,6 +5,13 @@
   "verified_capabilities": [],
   "development_routes": [
     {
+      "operation": "prepare-wav",
+      "description": "PCM16 WAV preparation for speech recognition",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "pending compilation"
+    },
+    {
       "operation": "export-vtt",
       "description": "Plain-text WebVTT from SRT input or draft",
       "status": "implemented-unverified",

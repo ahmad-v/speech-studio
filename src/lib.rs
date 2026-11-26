@@ -5,6 +5,7 @@ use sha2::{Digest, Sha256};
 use std::{io::Cursor, path::Path};
 pub const OPERATIONS:&[Operation]=&[
  Operation{id:"audio-info",label:"Audio inspection",hint:"Inspect local 16 kHz mono PCM16 WAV; maximum 10 minutes."},
+ Operation{id:"prepare-wav",label:"Prepare WAV for speech recognition",hint:"Convert 16, 32 or 48 kHz mono/stereo PCM16 WAV to a new 16 kHz mono WAV."},
  Operation{id:"open-srt",label:"Open SRT",hint:"Load and validate UTF-8 SRT into editable draft."},
  Operation{id:"export-srt",label:"Save SRT",hint:"Validate editable draft, or load SRT from input if draft empty. New .srt output."},
  Operation{id:"export-txt",label:"Save text",hint:"Extract text from editable SRT draft or input SRT. New .txt output."},
@@ -39,6 +40,68 @@ fn wav(p: &Path, j: &Job) -> Result<Vec<f32>> {
         return Err(Error::input("Empty audio"));
     }
     Ok(samples)
+}
+fn prepare_wav(input: &Path, output: &Path, job: &Job) -> Result<u32> {
+    if output.extension().and_then(|ext| ext.to_str()) != Some("wav") {
+        return Err(Error::input("Expected .wav output"));
+    }
+    let bytes = read_bounded(input, 128 * 1024 * 1024)?;
+    let mut reader = hound::WavReader::new(Cursor::new(bytes)).map_err(err)?;
+    let spec = reader.spec();
+    if !matches!(spec.channels, 1 | 2)
+        || !matches!(spec.sample_rate, 16_000 | 32_000 | 48_000)
+        || spec.bits_per_sample != 16
+        || spec.sample_format != hound::SampleFormat::Int
+    {
+        return Err(Error::input(
+            "Expected mono or stereo PCM16 WAV at 16, 32 or 48 kHz",
+        ));
+    }
+    let frames = reader.duration();
+    if frames == 0 || frames > 600 * spec.sample_rate {
+        return Err(Error::input(
+            "Audio must be nonempty and no longer than 10 minutes",
+        ));
+    }
+    let ratio = spec.sample_rate / 16_000;
+    let output_frames = frames.div_ceil(ratio);
+    write_new(output, |file| {
+        let mut writer = hound::WavWriter::new(
+            file,
+            hound::WavSpec {
+                channels: 1,
+                sample_rate: 16_000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )
+        .map_err(err)?;
+        let mut samples = reader.samples::<i16>();
+        for frame in (0..frames).step_by(ratio as usize) {
+            if frame % (ratio * 1024) == 0 {
+                job.check()?;
+            }
+            let count = (frames - frame).min(ratio) * u32::from(spec.channels);
+            let mut sum = 0i32;
+            for _ in 0..count {
+                let sample = samples
+                    .next()
+                    .ok_or_else(|| Error::input("Incomplete PCM frame"))?
+                    .map_err(err)?;
+                sum += i32::from(sample);
+            }
+            writer
+                .write_sample((sum / count as i32) as i16)
+                .map_err(err)?;
+        }
+        if samples.next().is_some() {
+            return Err(Error::input("WAV contains an incomplete channel frame"));
+        }
+        job.check()?;
+        writer.finalize().map_err(err)?;
+        Ok(())
+    })?;
+    Ok(output_frames)
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Segment {
@@ -218,6 +281,11 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
     j.check()?;
     let mut out = Outcome::default();
     match r.operation.as_str() {
+        "prepare-wav" => {
+            let frames = prepare_wav(&r.input, &r.output, &j)?;
+            out.preview = format!("Prepared {frames} mono samples at 16,000 Hz");
+            out.written = Some(r.output);
+        }
         "audio-info" => {
             let s = wav(&r.input, &j)?;
             out.preview = format!(
@@ -318,6 +386,38 @@ mod tests {
             "WEBVTT\n\n00:00:00.500 --> 00:00:02.100\nCafé &amp; &lt;text&gt; --&gt; here\n\n"
         );
     }
+    #[test]
+    fn prepares_stereo_wav_with_a_partial_final_group() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("input.wav");
+        let output = dir.path().join("output.wav");
+        let mut writer = hound::WavWriter::create(
+            &input,
+            hound::WavSpec {
+                channels: 2,
+                sample_rate: 32_000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )
+        .unwrap();
+        for sample in [1000i16, 3000, -1000, 1000, 2000, 4000] {
+            writer.write_sample(sample).unwrap();
+        }
+        writer.finalize().unwrap();
+        assert_eq!(prepare_wav(&input, &output, &Job::new()).unwrap(), 2);
+        let mut result = hound::WavReader::open(output).unwrap();
+        assert_eq!(result.spec().channels, 1);
+        assert_eq!(result.spec().sample_rate, 16_000);
+        assert_eq!(
+            result
+                .samples::<i16>()
+                .collect::<std::result::Result<Vec<_>, _>>()
+                .unwrap(),
+            vec![1000, 3000]
+        );
+    }
+
     #[test]
     fn audio() {
         let d = tempfile::tempdir().unwrap();
