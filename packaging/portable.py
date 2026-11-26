@@ -80,9 +80,10 @@ def main():
         if "Usage: --cli OP INPUT OUTPUT PARAMETER" not in result.stdout:
             raise SystemExit("Packaged CLI help did not return the expected usage text")
 
+        has_asr = any(line.startswith("transcribe:") for line in result.stdout.splitlines())
+        if has_asr != bool(args.whisper_model):
+            raise SystemExit("ASR-enabled binary and private speech model must be supplied together")
         if args.whisper_model:
-            if not any(line.startswith("transcribe:") for line in result.stdout.splitlines()):
-                raise SystemExit("The executable has no ASR support")
             installed = extracted / name / FOLDER / MANIFEST["file"]
             with installed.open("rb") as model:
                 if hashlib.file_digest(model, "sha256").hexdigest() != MANIFEST["sha256"]:

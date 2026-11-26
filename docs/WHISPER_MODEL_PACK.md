@@ -15,3 +15,5 @@ The pack contains model data, provenance and the model's MIT license. The CPU in
 Both explicit and app-relative model lookup have Linux x86_64 offline smoke evidence. The app-relative test extracted the generated pack alongside a locked ASR-enabled CLI build, transcribed a short reference WAV into a two-cue draft without passing a model path, and exported that draft via the SRT route. Tracing recorded no socket or connect calls while socket creation was blocked. A truncated model copy failed the SHA-256 check. This evidence applies to a staged local binary. Hardware, clean-device, ASR-enabled installer and broad model quality checks remain pending.
 
 The Linux x64 ASR-enabled portable archive passed checksum verification and a second smoke test from the extracted payload. Its pinned application-relative model transcribed the reference WAV and exported the reviewed draft as two SRT cues. Socket creation was blocked and the trace showed no socket or connect calls.
+
+The portable packager requires ASR support and the pinned model to be supplied together. A default build may be packaged without the model when its CLI has no transcription route.
