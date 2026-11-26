@@ -46,6 +46,11 @@ def linux_tree(root,binpath):
     for relative,src in [('usr/share/applications',CFG['app_id']+'.desktop'),('usr/share/metainfo',CFG['app_id']+'.metainfo.xml'),('usr/share/icons/hicolor/scalable/apps',CFG['app_id']+'.svg')]:
         dest=root/relative;dest.mkdir(parents=True,exist_ok=True);shutil.copy2(R/'packaging/linux'/src,dest/src)
 
+    for path in [root, *root.rglob('*')]:
+        if not path.is_symlink():
+            path.chmod(0o755 if path.is_dir() else 0o644)
+    (d/binpath.name).chmod(0o755)
+
 def build(fmt,target,binpath,out):
     n,title,ver=CFG['name'],CFG['title'],CFG['package_version'];arm=target.startswith('aarch64');stem=f'{n}-{ver}-{target}'
     with tempfile.TemporaryDirectory(prefix='studio-package-') as tmp:
@@ -57,7 +62,9 @@ def build(fmt,target,binpath,out):
                     if p.is_file():z.write(p,arcname=f'{n}/{p.relative_to(tree).as_posix()}')
         elif fmt=='deb':
             root=t/'deb';linux_tree(root,binpath);control=root/'DEBIAN';control.mkdir()
+            control.chmod(0o755)
             (control/'control').write_text(f'Package: {n}\nVersion: {ver}\nArchitecture: {"arm64" if arm else "amd64"}\nMaintainer: {CFG["maintainer"]}\nSection: utils\nPriority: optional\nDepends: libc6, libgcc-s1, libxkbcommon0, libwayland-client0, libx11-6, libfontconfig1\nDescription: {title} experimental development package\n')
+            (control/'control').chmod(0o644)
             call(need('dpkg-deb'),'--root-owner-group','--build',root,out/(stem+'.deb'))
         elif fmt=='rpm':
             root=t/'rpm';linux_tree(root,binpath);top=t/'rpmbuild'
