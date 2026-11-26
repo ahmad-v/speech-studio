@@ -1,17 +1,17 @@
 # Status | 0.1.0-alpha.1
 
-M0 complete as source planning; partial M1 implementation, not verified. All five repos created locally as source trees only. No remote resources created.
+Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_64.
 
 | Operation | Scope | Status |
 |---|---|---|
-| audio-info | 16 kHz mono signed PCM16 WAV | implemented-unverified |
-| open-srt | UTF-8 SRT subset; editable draft | implemented-unverified |
-| export-srt | Validated SRT output | implemented-unverified |
-| export-txt | Plain transcript text | implemented-unverified |
-| transcribe | Optional CPU whisper-rs adapter, no bundled model | blocked |
+| audio-info | 16 kHz mono signed PCM16 WAV | Linux fixture-tested |
+| open-srt | UTF-8 SRT subset; editable draft | Linux fixture-tested |
+| export-srt | Validated SRT output | Linux fixture-tested |
+| export-txt | Plain transcript text | Linux fixture-tested |
+| transcribe | Optional CPU whisper-rs adapter, no bundled model | Linux compile checked, inference unverified |
 
 ## Known gaps
 
-No redistributed ASR model or reference speech. Optional native inference source only, not enabled in default build. Explicit local model path and expected SHA-256 required; user hash is integrity, not authenticity. Cancellation cannot interrupt inference itself. No playback, resampling, waveform, language accuracy, WER, translation, diarization, TTS or model pack. SRT supports strict basic timecodes and sequential indices; overlapping segments allowed.
+No redistributed ASR model or reference speech. Native inference is optional and disabled by default. Explicit local model path and expected SHA-256 required; user hash is integrity, not authenticity. Cancellation cannot interrupt inference itself. No playback, resampling, waveform, language accuracy, WER, translation, diarization, TTS or model pack. SRT supports strict basic timecodes and sequential indices; overlapping segments allowed.
 
-Cargo and rustc absent; registry and distribution DNS failed. No lockfile, compilation, rustfmt, clippy, Rust tests, GUI/device tests, package builds or security audit performed. All five platform builds blocked pending CI. See MASTER_SPECIFICATION.md for authoritative acceptance gates.
+Hosted matrix, device, and packaging verification remain open. See [verification evidence](VERIFICATION.md) and [dependency review](DEPENDENCIES.md).

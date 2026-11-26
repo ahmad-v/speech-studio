@@ -1,5 +1,7 @@
 # Dependencies
 
-See Cargo.toml  for exact direct version requirements. They are proposed, not resolved. No Cargo.lock exists because Cargo and registry access were unavailable. No transitive version, MSRV, license, security or build compatibility is asserted. The GitHub Actions configuration uses pinned checkout/upload SHAs as candidates; maintainer must review action source before enabling. No paid runners. Review RustSec advisories, native/model licensing, SBOM and build provenance before distribution.
+Cargo manifests list the exact direct requirements. The committed lockfile records the resolved versions and registry checksums. Builds use Rust 1.88.0 from `rust-toolchain.toml`. The CI checkout action is pinned to its upstream v4.2.2 commit.
 
-Sources checked selectively: GitHub hosted runner table (https://docs.github.com/en/actions/reference/runners/github-hosted-runners), Iced 0.13.1 (https://docs.rs/crate/iced/0.13.1), lopdf 0.34.0 (https://docs.rs/crate/lopdf/0.34.0), calamine 0.26.1 (https://docs.rs/crate/calamine/0.26.1), whisper-rs 0.14.0 (https://docs.rs/crate/whisper-rs/0.14.0). Exact API signatures and all other versions still require cargo check. No model or binary is bundled.
+A preliminary RustSec review used advisory database revision `c9f6c91a44dbad9d71742329e9df061279f9c4be`. The GUI graph still includes `lru 0.12.5` through `iced_glyphon` (RUSTSEC-2026-0002 and RUSTSEC-2026-0253). Track an upstream update and assess reachability before distribution. Full license review, SBOM and native dependency review remain open.
+
+The optional ASR feature pins Whisper 0.14.4 because 0.14.0 was yanked. The repository ships without a model or model binary.

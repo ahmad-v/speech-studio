@@ -1,0 +1,67 @@
+name: Check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: X64
+          - runner: ubuntu-24.04-arm
+            arch: ARM64
+          - runner: windows-2025
+            arch: X64
+          - runner: windows-11-arm
+            arch: ARM64
+          - runner: macos-26
+            arch: ARM64
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Verify runner architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: test "$RUNNER_ARCH" = "$EXPECTED_ARCH"
+      - name: Install Linux build prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev
+      - name: Verify locked build and tests
+        run: |
+          cargo --version
+          cargo fmt --all -- --check
+          cargo check --locked --all-targets
+          cargo tree --locked
+          cargo test --locked
+          cargo clippy --locked --all-targets -- -D warnings
+      - name: Verify headless mode
+        run: |
+          cargo test --locked --no-default-features
+          cargo run --locked --no-default-features -- --cli --help
+      - name: Check optional ASR build
+        if: runner.os == 'Linux' && matrix.arch == 'X64'
+        run: |
+          sudo apt-get install -y cmake libclang-dev
+          cargo check --locked --no-default-features --features asr
