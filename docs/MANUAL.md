@@ -19,3 +19,6 @@ Limitations: No redistributed ASR model or reference speech. Optional native inf
 No output overwrite is allowed. No accounts, ads, telemetry or runtime downloads are intended. Do not use this unverified snapshot with valuable or hostile input. Citation and donations are voluntary.
 
 WAV preparation downmixes and uses weighted frame averaging for supported PCM16 inputs. High-frequency content can alias during downsampling.
+
+- `shift-timing`: Enter a signed offset in milliseconds, such as `-200`. The operation returns a new SRT draft with the same cue text and durations. A shift outside the SRT timestamp range fails. Export the draft to save it.
+- `waveform-svg`: Supply a 16 kHz mono PCM16 WAV and a new SVG path. The export shows peak amplitudes and duration for clips up to ten minutes. Use Prepare WAV first for other supported PCM16 input rates.

@@ -4,6 +4,8 @@ Nothing is verified on a native target. The machine-readable registry is a devel
 
 | Operation | Route | Evidence status |
 |---|---|---|
+| shift-timing | Shift all subtitle cues by signed milliseconds | Linux fixture and CLI-tested |
+| waveform-svg | Export a peak SVG from mono 16 kHz PCM16 WAV | Linux fixture and CLI-tested |
 | audio-info | 16 kHz mono signed PCM16 WAV | implemented-unverified |
 | open-srt | UTF-8 SRT subset; editable draft | implemented-unverified |
 | export-srt | Validated SRT output | implemented-unverified |

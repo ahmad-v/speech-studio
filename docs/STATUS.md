@@ -4,6 +4,8 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 
 | Operation | Scope | Status |
 |---|---|---|
+| shift-timing | Shift all subtitle cues by signed milliseconds | Linux fixture and CLI-tested |
+| waveform-svg | Export a peak SVG from mono 16 kHz PCM16 WAV | Linux fixture and CLI-tested |
 | open-vtt | Import plain-text WebVTT cues into an SRT draft | Linux fixture-tested |
 | prepare-wav | PCM16 WAV at 16, 32, 44.1 or 48 kHz to mono 16 kHz | Linux fixture-tested |
 | audio-info | 16 kHz mono signed PCM16 WAV | Linux fixture-tested |

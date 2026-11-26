@@ -5,6 +5,20 @@
   "verified_capabilities": [],
   "development_routes": [
     {
+      "operation": "waveform-svg",
+      "description": "Export a peak SVG from mono 16 kHz PCM16 WAV",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux fixture and CLI checks passed"
+    },
+    {
+      "operation": "shift-timing",
+      "description": "Shift all subtitle cues by signed milliseconds",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux fixture and CLI checks passed"
+    },
+    {
       "operation": "open-vtt",
       "description": "Import plain-text WebVTT cues into an SRT draft",
       "status": "implemented-unverified",

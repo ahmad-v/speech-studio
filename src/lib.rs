@@ -5,12 +5,14 @@ use sha2::{Digest, Sha256};
 use std::{io::Cursor, path::Path};
 pub const OPERATIONS:&[Operation]=&[
  Operation{id:"audio-info",label:"Audio inspection",hint:"Inspect local 16 kHz mono PCM16 WAV; maximum 10 minutes."},
+ Operation{id:"waveform-svg",label:"Export WAV waveform",hint:"Export a peak waveform from 16 kHz mono PCM16 WAV to a new SVG."},
  Operation{id:"prepare-wav",label:"Prepare WAV for speech recognition",hint:"Convert 16, 32, 44.1 or 48 kHz mono/stereo PCM16 WAV to a new 16 kHz mono WAV."},
  Operation{id:"open-vtt",label:"Open WebVTT",hint:"Import plain-text WebVTT cues into the editable SRT draft."},
  Operation{id:"open-json",label:"Open transcript JSON",hint:"Load a version 1 transcript JSON file into the editable draft."},
  Operation{id:"open-srt",label:"Open SRT",hint:"Load and validate UTF-8 SRT into editable draft."},
  Operation{id:"export-srt",label:"Save SRT",hint:"Validate editable draft, or load SRT from input if draft empty. New .srt output."},
  Operation{id:"replace-text",label:"Find and replace transcript text",hint:"Enter JSON with find and replace. Uses the SRT file or current draft and preserves timestamps."},
+ Operation{id:"shift-timing",label:"Shift subtitle timing",hint:"Enter a signed offset in milliseconds. Uses the current draft or SRT input and returns a new draft."},
  Operation{id:"export-json",label:"Save transcript JSON",hint:"Export an SRT file or the edited draft with millisecond timestamps. Choose a new .json file."},
  Operation{id:"export-txt",label:"Save text",hint:"Extract text from editable SRT draft or input SRT. New .txt output."},
  Operation{id:"export-vtt",label:"Save WebVTT",hint:"Export an SRT file or edited SRT draft as plain-text WebVTT cues. Choose a new .vtt output."},
@@ -199,6 +201,61 @@ fn replace_text(mut segments: Vec<Segment>, parameter: &str, job: &Job) -> Resul
     }
     job.check()?;
     Ok((draft, count))
+}
+
+fn shift_timing(mut segments: Vec<Segment>, parameter: &str, job: &Job) -> Result<String> {
+    const MAX_TIMESTAMP: u64 = 100 * 60 * 60 * 1000 - 1;
+    let offset = parameter
+        .trim()
+        .parse::<i64>()
+        .map_err(|_| Error::input("Enter a signed whole number of milliseconds"))?;
+    for segment in &mut segments {
+        job.check()?;
+        let shift = |time: u64| {
+            time.checked_add_signed(offset)
+                .filter(|&value| value <= MAX_TIMESTAMP)
+                .ok_or_else(|| {
+                    Error::input("Shift would place a cue outside the SRT timestamp range")
+                })
+        };
+        segment.start = shift(segment.start)?;
+        segment.end = shift(segment.end)?;
+    }
+    let draft = render(&segments);
+    parse(&draft)?;
+    Ok(draft)
+}
+
+fn waveform_svg(samples: &[f32], job: &Job) -> Result<String> {
+    use std::fmt::Write as _;
+    const WIDTH: usize = 960;
+    let width = samples.len().min(WIDTH);
+    let mut svg = String::from(
+        r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 220" role="img"><title>Audio peak waveform</title><rect width="960" height="220" fill="white"/><path d="M0 100H960" stroke="#bbb"/>"##,
+    );
+    for column in 0..width {
+        job.check()?;
+        let start = column * samples.len() / width;
+        let end = (column + 1) * samples.len() / width;
+        let (low, high) = samples[start..end]
+            .iter()
+            .fold((0.0_f32, 0.0_f32), |(low, high), &sample| {
+                (low.min(sample), high.max(sample))
+            });
+        let x = (column as f64 + 0.5) * WIDTH as f64 / width as f64;
+        let top = 100.0 - high * 90.0;
+        let bottom = 100.0 - low * 90.0;
+        let _ = write!(
+            svg,
+            r##"<path d="M{x:.3} {top:.3}V{bottom:.3}" stroke="#182850"/>"##
+        );
+    }
+    let duration = samples.len() as f64 / 16_000.0;
+    let _ = write!(
+        svg,
+        r#"<text x="10" y="207" font-family="sans-serif" font-size="12">0 s</text><text x="950" y="207" text-anchor="end" font-family="sans-serif" font-size="12">{duration:.3} s</text></svg>"#
+    );
+    Ok(svg)
 }
 
 fn stamp(ms: u64) -> String {
@@ -501,6 +558,20 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
             out.warnings.push("WAV preparation uses weighted averaging for downsampling. High-frequency content can alias.".into());
             out.written = Some(r.output);
         }
+        "waveform-svg" => {
+            if r.output.extension().and_then(|ext| ext.to_str()) != Some("svg") {
+                return Err(Error::input("Expected .svg output"));
+            }
+            let samples = wav(&r.input, &j)?;
+            let svg = waveform_svg(&samples, &j)?;
+            j.check()?;
+            write_bytes(&r.output, svg.as_bytes())?;
+            out.preview = format!(
+                "Exported peak waveform for {:.3} seconds",
+                samples.len() as f64 / 16_000.0
+            );
+            out.written = Some(r.output);
+        }
         "audio-info" => {
             let s = wav(&r.input, &j)?;
             out.preview = format!(
@@ -520,15 +591,21 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
             out.warnings
                 .push("Cue identifiers and NOTE blocks are omitted.".into());
         }
-        "replace-text" => {
+        "replace-text" | "shift-timing" => {
             let source = if r.draft.trim().is_empty() {
                 String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?
             } else {
                 r.draft
             };
-            let (draft, count) = replace_text(parse(&source)?, &r.parameter, &j)?;
-            out.preview = format!("Replaced {count} occurrences in the draft");
-            out.draft = Some(draft);
+            let segments = parse(&source)?;
+            if r.operation == "shift-timing" {
+                out.preview = format!("Shifted {} cue timings", segments.len());
+                out.draft = Some(shift_timing(segments, &r.parameter, &j)?);
+            } else {
+                let (draft, count) = replace_text(segments, &r.parameter, &j)?;
+                out.preview = format!("Replaced {count} occurrences in the draft");
+                out.draft = Some(draft);
+            }
         }
         "open-json" => {
             let (draft, count) = open_transcript(&r.input, &j)?;
@@ -594,6 +671,31 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn shifts_overlapping_cues_without_changing_text_or_duration() {
+        let input =
+            "1\n00:00:00,120 --> 00:00:01,250\nCafé\n\n2\n00:00:01,000 --> 00:00:03,000\nTea\n";
+        let segments = parse(input).unwrap();
+        let shifted = shift_timing(segments.clone(), "-120", &Job::new()).unwrap();
+        let actual = parse(&shifted).unwrap();
+        assert_eq!((actual[0].start, actual[0].end), (0, 1130));
+        assert_eq!((actual[1].start, actual[1].end), (880, 2880));
+        assert_eq!(actual[0].text, "Café");
+        assert!(shift_timing(segments.clone(), "-121", &Job::new()).is_err());
+        assert!(shift_timing(segments, "360000000", &Job::new()).is_err());
+    }
+
+    #[test]
+    fn waveform_preserves_peaks_and_caps_horizontal_resolution() {
+        let mut samples = vec![0.0; 1920];
+        samples[0] = 1.0;
+        samples[1] = -1.0;
+        let svg = waveform_svg(&samples, &Job::new()).unwrap();
+        assert!(svg.contains("M0.500 10.000V190.000"));
+        assert_eq!(svg.matches("<path ").count(), 961);
+        assert!(svg.contains("0.120 s"));
+    }
+
     #[test]
     fn replace_text_preserves_timing_and_rejects_empty_cues() {
         let original = "1\n00:00:00,120 --> 00:00:01,250\nCafé Café\n\n2\n00:00:02,000 --> 00:00:03,000\nTea\n";
