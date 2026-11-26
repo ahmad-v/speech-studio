@@ -12,8 +12,9 @@ fn main() {
         return;
     }
     #[cfg(feature = "gui")]
-    if let Err(e) = localwright_ui::run(
+    if let Err(e) = localwright_ui::run_with_saved_appearance(
         "Speech Studio",
+        "speech-studio",
         speech_studio::OPERATIONS,
         speech_studio::handle,
     ) {
