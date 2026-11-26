@@ -36,6 +36,11 @@ def collect(repo, bundle, target, binary):
             if any(kind["kind"] != "dev" for kind in edge["dep_kinds"])
         )
 
+    supplemental_dir = repo / "packaging/upstream-licenses"
+    supplemental = {
+        (entry["name"], entry["version"]): entry
+        for entry in json.loads((supplemental_dir / "sources.json").read_text(encoding="utf-8"))
+    }
     notices = bundle / "third-party"
     notices.mkdir()
     entries = []
@@ -66,6 +71,24 @@ def collect(repo, bundle, target, binary):
             shutil.copy2(path, dest)
             copied.append(dest.relative_to(bundle).as_posix())
 
+        source_urls = []
+        if not copied and (entry := supplemental.get((package["name"], package["version"]))):
+            source = package["source"] or ""
+            metadata_file = package_root / ".cargo_vcs_info.json"
+            if source.startswith("git+https://github.com/ahmad-v/localwright?"):
+                revision = source.rpartition("#")[2]
+            elif source.startswith("registry+") and metadata_file.is_file():
+                revision = json.loads(metadata_file.read_text(encoding="utf-8"))["git"]["sha1"]
+            else:
+                revision = None
+            if revision == entry["revision"]:
+                copy_root.mkdir(exist_ok=True)
+                for notice in entry["files"]:
+                    dest = copy_root / notice["name"]
+                    shutil.copy2(supplemental_dir / notice["name"], dest)
+                    copied.append(dest.relative_to(bundle).as_posix())
+                    source_urls.append(notice["url"])
+
         asset_review = []
         icon_font = package_root / "fonts/Iced-Icons.ttf"
         if package["name"] == "iced_graphics" and icon_font.is_file():
@@ -81,6 +104,7 @@ def collect(repo, bundle, target, binary):
             "repository": package["repository"],
             "declared_license": package["license"],
             "notice_files": copied,
+            "supplemental_notice_sources": source_urls,
             "asset_review": asset_review,
         })
 

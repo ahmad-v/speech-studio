@@ -1,0 +1,120 @@
+[
+  {
+    "name": "iced_core",
+    "version": "0.13.2",
+    "revision": "7ea4da55b7715fd100af73caab6d239691d37977",
+    "files": [
+      {
+        "name": "ICED-LICENSE",
+        "url": "https://raw.githubusercontent.com/iced-rs/iced/7ea4da55b7715fd100af73caab6d239691d37977/LICENSE"
+      }
+    ]
+  },
+  {
+    "name": "iced_futures",
+    "version": "0.13.2",
+    "revision": "b1c13e285ee6009a3c547ffb12038b0ca91c4d35",
+    "files": [
+      {
+        "name": "ICED-LICENSE",
+        "url": "https://raw.githubusercontent.com/iced-rs/iced/b1c13e285ee6009a3c547ffb12038b0ca91c4d35/LICENSE"
+      }
+    ]
+  },
+  {
+    "name": "iced_graphics",
+    "version": "0.13.0",
+    "revision": "9458967963411b04dd8d41aa06b6349fbeb7a1f6",
+    "files": [
+      {
+        "name": "ICED-LICENSE",
+        "url": "https://raw.githubusercontent.com/iced-rs/iced/9458967963411b04dd8d41aa06b6349fbeb7a1f6/LICENSE"
+      }
+    ]
+  },
+  {
+    "name": "iced_renderer",
+    "version": "0.13.0",
+    "revision": "9458967963411b04dd8d41aa06b6349fbeb7a1f6",
+    "files": [
+      {
+        "name": "ICED-LICENSE",
+        "url": "https://raw.githubusercontent.com/iced-rs/iced/9458967963411b04dd8d41aa06b6349fbeb7a1f6/LICENSE"
+      }
+    ]
+  },
+  {
+    "name": "iced_runtime",
+    "version": "0.13.2",
+    "revision": "b1c13e285ee6009a3c547ffb12038b0ca91c4d35",
+    "files": [
+      {
+        "name": "ICED-LICENSE",
+        "url": "https://raw.githubusercontent.com/iced-rs/iced/b1c13e285ee6009a3c547ffb12038b0ca91c4d35/LICENSE"
+      }
+    ]
+  },
+  {
+    "name": "iced_tiny_skia",
+    "version": "0.13.0",
+    "revision": "9458967963411b04dd8d41aa06b6349fbeb7a1f6",
+    "files": [
+      {
+        "name": "ICED-LICENSE",
+        "url": "https://raw.githubusercontent.com/iced-rs/iced/9458967963411b04dd8d41aa06b6349fbeb7a1f6/LICENSE"
+      }
+    ]
+  },
+  {
+    "name": "iced_widget",
+    "version": "0.13.4",
+    "revision": "dc38af122ea8ecf0f53622e8bfc220b728839117",
+    "files": [
+      {
+        "name": "ICED-LICENSE",
+        "url": "https://raw.githubusercontent.com/iced-rs/iced/dc38af122ea8ecf0f53622e8bfc220b728839117/LICENSE"
+      }
+    ]
+  },
+  {
+    "name": "iced_winit",
+    "version": "0.13.0",
+    "revision": "9458967963411b04dd8d41aa06b6349fbeb7a1f6",
+    "files": [
+      {
+        "name": "ICED-LICENSE",
+        "url": "https://raw.githubusercontent.com/iced-rs/iced/9458967963411b04dd8d41aa06b6349fbeb7a1f6/LICENSE"
+      }
+    ]
+  },
+  {
+    "name": "localwright-core",
+    "version": "0.1.0-alpha.1",
+    "revision": "019bdc79535280d4f1fa723878192849fe8fb5dc",
+    "files": [
+      {
+        "name": "LOCALWRIGHT-LICENSE-MIT",
+        "url": "https://raw.githubusercontent.com/ahmad-v/localwright/019bdc79535280d4f1fa723878192849fe8fb5dc/LICENSE-MIT"
+      },
+      {
+        "name": "LOCALWRIGHT-LICENSE-APACHE",
+        "url": "https://raw.githubusercontent.com/ahmad-v/localwright/019bdc79535280d4f1fa723878192849fe8fb5dc/LICENSE-APACHE"
+      }
+    ]
+  },
+  {
+    "name": "localwright-ui",
+    "version": "0.1.0-alpha.1",
+    "revision": "019bdc79535280d4f1fa723878192849fe8fb5dc",
+    "files": [
+      {
+        "name": "LOCALWRIGHT-LICENSE-MIT",
+        "url": "https://raw.githubusercontent.com/ahmad-v/localwright/019bdc79535280d4f1fa723878192849fe8fb5dc/LICENSE-MIT"
+      },
+      {
+        "name": "LOCALWRIGHT-LICENSE-APACHE",
+        "url": "https://raw.githubusercontent.com/ahmad-v/localwright/019bdc79535280d4f1fa723878192849fe8fb5dc/LICENSE-APACHE"
+      }
+    ]
+  }
+]
