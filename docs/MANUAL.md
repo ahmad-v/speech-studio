@@ -2,6 +2,7 @@
 
 Development source only. Launch the GUI after compiling. Choose an operation, enter local input path and a new output path where needed, set the parameter as described under the operation selector, then Run. Status and errors are shown below. Cancel requests cooperative cancellation. The draft editor accepts transcript or plain text. Choose a theme to change workbench colors and control borders. UI scale adjusts the controls from 80% to 300% for the current session. Paths are manually typed in this increment; native dialogs and full accessibility remain pending.
 
+- `open-vtt`: Imports simple UTF-8 cues. Cue settings, regions, styles, and timed markup are outside this route. Cue identifiers and NOTE blocks are omitted.
 - `prepare-wav`: Converts mono or stereo PCM16 WAV at 16, 32, or 48 kHz to a new 16 kHz mono WAV. Downsampling averages groups of input frames.
 - `audio-info`: 16 kHz mono signed PCM16 WAV.
 - `open-srt`: UTF-8 SRT subset; editable draft.

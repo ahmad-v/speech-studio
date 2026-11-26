@@ -5,6 +5,13 @@
   "verified_capabilities": [],
   "development_routes": [
     {
+      "operation": "open-vtt",
+      "description": "Import plain-text WebVTT cues into an SRT draft",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "pending compilation"
+    },
+    {
       "operation": "prepare-wav",
       "description": "PCM16 WAV preparation for speech recognition",
       "status": "implemented-unverified",

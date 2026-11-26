@@ -6,6 +6,7 @@ use std::{io::Cursor, path::Path};
 pub const OPERATIONS:&[Operation]=&[
  Operation{id:"audio-info",label:"Audio inspection",hint:"Inspect local 16 kHz mono PCM16 WAV; maximum 10 minutes."},
  Operation{id:"prepare-wav",label:"Prepare WAV for speech recognition",hint:"Convert 16, 32 or 48 kHz mono/stereo PCM16 WAV to a new 16 kHz mono WAV."},
+ Operation{id:"open-vtt",label:"Open WebVTT",hint:"Import plain-text WebVTT cues into the editable SRT draft."},
  Operation{id:"open-srt",label:"Open SRT",hint:"Load and validate UTF-8 SRT into editable draft."},
  Operation{id:"export-srt",label:"Save SRT",hint:"Validate editable draft, or load SRT from input if draft empty. New .srt output."},
  Operation{id:"export-txt",label:"Save text",hint:"Extract text from editable SRT draft or input SRT. New .txt output."},
@@ -175,6 +176,85 @@ fn parse(s: &str) -> Result<Vec<Segment>> {
     }
     Ok(segments)
 }
+fn vtt_stamp(value: &str) -> Result<u64> {
+    let (clock, milliseconds) = value
+        .split_once('.')
+        .ok_or_else(|| Error::input("Invalid WebVTT timestamp"))?;
+    let clock = match clock.matches(':').count() {
+        1 => format!("00:{clock}"),
+        2 => clock.to_owned(),
+        _ => return Err(Error::input("Invalid WebVTT timestamp")),
+    };
+    parse_stamp(&format!("{clock},{milliseconds}"))
+}
+
+fn parse_vtt(source: &str, job: &Job) -> Result<Vec<Segment>> {
+    if source.len() > 2 * 1024 * 1024 {
+        return Err(Error::input("Subtitle exceeds limit"));
+    }
+    let source = source
+        .trim_start_matches('\u{feff}')
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+    let mut blocks = source.trim_end().split("\n\n");
+    let header = blocks
+        .next()
+        .ok_or_else(|| Error::input("Missing WebVTT header"))?;
+    if header.contains('\n')
+        || !header
+            .strip_prefix("WEBVTT")
+            .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with([' ', '\t']))
+    {
+        return Err(Error::input("Expected a WEBVTT header"));
+    }
+
+    let mut segments = Vec::<Segment>::new();
+    for block in blocks.filter(|block| !block.trim().is_empty()) {
+        job.check()?;
+        let mut lines = block.lines();
+        let first = lines.next().expect("nonempty cue block");
+        if first == "NOTE"
+            || first
+                .strip_prefix("NOTE")
+                .is_some_and(|suffix| suffix.starts_with([' ', '\t']))
+        {
+            continue;
+        }
+        let timing = if first.contains(" --> ") {
+            first
+        } else {
+            lines
+                .next()
+                .ok_or_else(|| Error::input("Missing WebVTT cue timing"))?
+        };
+        let (start, end) = timing
+            .split_once(" --> ")
+            .ok_or_else(|| Error::input("Invalid WebVTT cue timing"))?;
+        let (start, end) = (vtt_stamp(start.trim())?, vtt_stamp(end.trim())?);
+        let text = lines.collect::<Vec<_>>().join("\n");
+        if text.contains('<') {
+            return Err(Error::input(
+                "WebVTT cue markup is outside the supported subset",
+            ));
+        }
+        let text = text
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&amp;", "&");
+        if end <= start
+            || text.trim().is_empty()
+            || segments.last().is_some_and(|p| p.start > start)
+        {
+            return Err(Error::input("Invalid WebVTT cue duration, text or order"));
+        }
+        segments.push(Segment { start, end, text });
+    }
+    if segments.is_empty() {
+        return Err(Error::input("No WebVTT cues"));
+    }
+    Ok(segments)
+}
+
 fn render(segments: &[Segment]) -> String {
     segments
         .iter()
@@ -337,6 +417,17 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
                 s.len() as f64 / 16000.0
             );
         }
+        "open-vtt" => {
+            let source =
+                String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?;
+            let segments = parse_vtt(&source, &j)?;
+            let draft = render(&segments);
+            parse(&draft)?;
+            out.preview = format!("{} WebVTT cues imported into the SRT draft", segments.len());
+            out.draft = Some(draft);
+            out.warnings
+                .push("Cue identifiers and NOTE blocks are omitted.".into());
+        }
         "open-srt" | "export-srt" | "export-txt" | "export-vtt" => {
             let source = if r.operation == "open-srt" || r.draft.trim().is_empty() {
                 String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?
@@ -410,6 +501,25 @@ mod tests {
         .unwrap();
         assert_eq!(std::fs::read_to_string(p).unwrap(), "Café\nWorld");
     }
+    #[test]
+    fn imports_plain_webvtt_with_identifiers_and_escaped_text() {
+        let source = "WEBVTT\r\n\r\nNOTE comment\r\n\r\ncue-id\r\n00:00.500 --> 00:02.100\r\nCafé &amp; &lt;test&gt;\r\n";
+        let cues = parse_vtt(source, &Job::new()).unwrap();
+        assert_eq!(
+            cues,
+            [Segment {
+                start: 500,
+                end: 2100,
+                text: "Café & <test>".into()
+            }]
+        );
+        assert!(parse_vtt(
+            "WEBVTT\n\n00:00.000 --> 00:01.000 line:0\nCaption",
+            &Job::new()
+        )
+        .is_err());
+    }
+
     #[test]
     fn webvtt_export_preserves_plain_text_and_timing() {
         let directory = tempfile::tempdir().unwrap();
