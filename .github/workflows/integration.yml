@@ -52,7 +52,7 @@ jobs:
       - name: Smoke launch the native GUI under Xvfb
         run: |
           set +e
-          timeout --signal=TERM --kill-after=10s 20s xvfb-run -a target/debug/speech-studio
+          timeout --signal=TERM --kill-after=10s 20s xvfb-run -a target/debug/speech-studio --audio
           status=$?
           set -e
           case "$status" in

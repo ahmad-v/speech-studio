@@ -15,4 +15,6 @@ Update both Localwright revision records and regenerate `Cargo.lock` when advanc
 
 The optional `asr` feature requires native C/C++ build tools, CMake and libclang. Run `cargo check --locked --no-default-features --features asr` to check compilation. Inference requires an explicitly selected local model and its SHA-256.
 
+Launch `speech-studio --audio` for the dedicated native playback workspace. GUI builds on Linux require ALSA development headers (`libasound2-dev`); playback itself requires an available local audio output device.
+
 Ordinary pull-request checks use Linux x64. Apply the `integration` label to run default GUI, headless CLI and optional ASR compile/test coverage. Apply `platform-validation` to run native checks on all five supported targets. The ASR model is not checked in or downloaded by CI, so backend compilation is not a model-accuracy test. See [CI workflow roles](CI.md) for the separate manually triggered preview and scheduled security workflows.

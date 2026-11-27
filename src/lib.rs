@@ -1,5 +1,9 @@
 #![forbid(unsafe_code)]
 mod analysis;
+#[cfg(feature = "audio-playback")]
+mod audio_model;
+#[cfg(all(feature = "gui", feature = "audio-playback"))]
+pub mod audio_ui;
 mod cue_edit;
 use localwright_core::*;
 #[cfg(feature = "asr")]
@@ -81,7 +85,16 @@ fn wav(p: &Path, j: &Job) -> Result<Vec<f32>> {
     Ok(samples)
 }
 #[cfg(feature = "audio-playback")]
-fn validate_playback_wav(bytes: &[u8], job: &Job) -> Result<(u64, u32)> {
+#[derive(Clone)]
+pub(crate) struct PlaybackClip {
+    pub(crate) bytes: std::sync::Arc<[u8]>,
+    pub(crate) sample_rate: u32,
+    pub(crate) duration_ms: u64,
+    pub(crate) waveform: Vec<f32>,
+}
+
+#[cfg(feature = "audio-playback")]
+fn validate_playback_wav(bytes: &[u8], job: &Job) -> Result<(u64, u32, Vec<f32>)> {
     if bytes.is_empty() || bytes.len() > 128 * 1024 * 1024 {
         return Err(Error::input(
             "WAV must be nonempty and no larger than 128 MiB",
@@ -105,18 +118,37 @@ fn validate_playback_wav(bytes: &[u8], job: &Job) -> Result<(u64, u32)> {
         ));
     }
     let expected_samples = u64::from(frames) * u64::from(spec.channels);
+    const WAVEFORM_BINS: usize = 240;
+    let mut waveform = vec![0.0f32; WAVEFORM_BINS];
     let mut count = 0u64;
     for sample in reader.samples::<i16>() {
         if count % 4096 == 0 {
             job.check()?;
         }
-        sample.map_err(err)?;
+        let value = sample.map_err(err)?;
+        let frame = count / u64::from(spec.channels);
+        let bin = ((frame * WAVEFORM_BINS as u64) / u64::from(frames))
+            .min((WAVEFORM_BINS - 1) as u64) as usize;
+        waveform[bin] = waveform[bin].max(f32::from(value).abs() / 32768.0);
         count += 1;
     }
     if count != expected_samples {
         return Err(Error::input("WAV sample data is incomplete"));
     }
-    Ok((u64::from(frames), spec.sample_rate))
+    Ok((u64::from(frames), spec.sample_rate, waveform))
+}
+
+#[cfg(feature = "audio-playback")]
+pub(crate) fn load_playback_clip(path: &Path, job: &Job) -> Result<PlaybackClip> {
+    let bytes = read_bounded(path, 128 * 1024 * 1024)?;
+    let (frames, sample_rate, waveform) = validate_playback_wav(&bytes, job)?;
+    let waveform = audio_model::bound_waveform(&waveform, 240);
+    Ok(PlaybackClip {
+        bytes: bytes.into(),
+        sample_rate,
+        duration_ms: frames.saturating_mul(1000) / u64::from(sample_rate),
+        waveform,
+    })
 }
 
 #[cfg(feature = "audio-playback")]
@@ -124,8 +156,9 @@ fn play_wav(input: &Path, job: &Job) -> Result<Outcome> {
     use rodio::{Decoder, OutputStream, Sink, Source};
     use std::time::Duration;
 
-    let bytes = read_bounded(input, 128 * 1024 * 1024)?;
-    let (frames, sample_rate) = validate_playback_wav(&bytes, job)?;
+    let clip = load_playback_clip(input, job)?;
+    let bytes = std::sync::Arc::clone(&clip.bytes);
+    let duration_ms = clip.duration_ms;
     job.check()?;
     let (stream, stream_handle) = OutputStream::try_default()
         .map_err(|error| Error::engine(format!("Could not open audio output: {error}")))?;
@@ -133,7 +166,7 @@ fn play_wav(input: &Path, job: &Job) -> Result<Outcome> {
         .map_err(|error| Error::engine(format!("Could not start audio playback: {error}")))?;
     let decoder = Decoder::new(Cursor::new(bytes))
         .map_err(|error| Error::input(format!("Could not decode WAV audio: {error}")))?;
-    if decoder.sample_rate() != sample_rate {
+    if decoder.sample_rate() != clip.sample_rate {
         return Err(Error::input("WAV sample rate changed during decode"));
     }
     sink.append(decoder);
@@ -148,7 +181,7 @@ fn play_wav(input: &Path, job: &Job) -> Result<Outcome> {
     Ok(Outcome {
         preview: format!(
             "Played {:.3} seconds of PCM16 WAV audio",
-            frames as f64 / sample_rate as f64,
+            duration_ms as f64 / 1000.0,
         ),
         ..Outcome::default()
     })
@@ -1405,10 +1438,10 @@ mod tests {
         writer.finalize().unwrap();
 
         let bytes = std::fs::read(path).unwrap();
-        assert_eq!(
-            validate_playback_wav(&bytes, &Job::new()).unwrap(),
-            (2, 32_000)
-        );
+        let (frames, rate, waveform) = validate_playback_wav(&bytes, &Job::new()).unwrap();
+        assert_eq!((frames, rate), (2, 32_000));
+        assert_eq!(waveform.len(), 240);
+        assert_eq!(waveform.iter().copied().fold(0.0f32, f32::max), 0.5);
         let decoder = Decoder::new(std::io::Cursor::new(bytes)).unwrap();
         let decoded = decoder.collect::<Vec<_>>();
         assert_eq!(decoded, [16384, -16384, 8192, -8192]);

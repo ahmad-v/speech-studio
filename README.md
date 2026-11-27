@@ -8,6 +8,7 @@ This independent studio uses Localwright at source level. There is no separate m
 
 - Local PCM16 WAV inspection, preparation, peak waveform export, and an energy-based activity estimate.
 - Bounded native WAV playback for mono or stereo PCM16 files; host audio device behavior is not hardware-verified.
+- A separate Iced audio workspace (`speech-studio --audio`) provides file selection, transport controls, seeking, playback position, and a canvas waveform with playhead.
 - UTF-8 SRT, WebVTT, LRC, JSON, and plain-text exchange, with bounded transcript and cue-range editing.
 - Unicode-aware transcript summaries and local language estimates.
 - Optional CPU Whisper integration. The model is not included in the baseline application or this repository; no runtime download occurs.
@@ -16,7 +17,7 @@ The project is intended to remain free, local and offline, without tracking, adv
 
 ## Development and verification
 
-The Linux x64 source suite has local fixture coverage. Five-target checks, engine-enabled target coverage, native playback/recording, multilingual accuracy, packaging, and installer lifecycle are still incomplete. The energy-based activity estimate is not neural VAD. See the [build notes](docs/BUILD.md), [CI workflow roles](docs/CI.md), [status](docs/STATUS.md), [architecture](docs/ARCHITECTURE.md), and [manual](docs/MANUAL.md). The [master specification](MASTER_SPECIFICATION.md) is authoritative for remaining work.
+The Linux x64 source suite has fixture coverage. The WAV decoder/bounds fixture passed in GitHub Integration; the native audio device and platform playback behavior are not hardware-verified. Headless transport logic tests for the new playback surface have not yet run locally because of workspace disk limits. Five-target checks, engine-enabled target coverage, recording, multilingual accuracy, packaging, and installer lifecycle are still incomplete. The energy-based activity estimate is not neural VAD. See the [build notes](docs/BUILD.md), [CI workflow roles](docs/CI.md), [status](docs/STATUS.md), [architecture](docs/ARCHITECTURE.md), and [manual](docs/MANUAL.md). The [master specification](MASTER_SPECIFICATION.md) is authoritative for remaining work.
 
 ## Citation and contributions
 

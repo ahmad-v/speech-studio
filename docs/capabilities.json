@@ -108,12 +108,12 @@
     },
     {
       "operation": "play-wav",
-      "description": "Native playback of bounded mono/stereo PCM16 WAV through the local audio output device",
+      "description": "Native Iced workspace for bounded mono/stereo PCM16 WAV: open, transport controls, seek, position, canvas waveform and moving playhead",
       "status": "implemented-unverified",
       "targets": [
         "x86_64-unknown-linux-gnu"
       ],
-      "fixture_status": "Linux Integration passed stereo PCM16 bounds and Rodio decoder fixtures; physical audio output and native device backends remain unverified"
+      "fixture_status": "Linux Integration passed WAV bounds/decoder fixture; headless transport tests for the Iced controls are added but pending; physical audio output and native device backends remain unverified"
     },
     {
       "operation": "audio-info",
