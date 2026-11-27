@@ -755,7 +755,8 @@ fn start_session(clip: &PlaybackClip, seek_ms: u64) -> Result<Session, String> {
     let (stream, handle): (OutputStream, OutputStreamHandle) =
         OutputStream::try_default().map_err(|error| error.to_string())?;
     let sink = Sink::try_new(&handle).map_err(|error| error.to_string())?;
-    let decoder = open_audio_decoder(Arc::clone(&clip.bytes))?;
+    let decoder = open_audio_decoder(Arc::clone(&clip.bytes), &Job::new())
+        .map_err(|error| error.to_string())?;
     if decoder.sample_rate() != clip.sample_rate {
         return Err("WAV sample rate changed while opening the decoder".into());
     }
