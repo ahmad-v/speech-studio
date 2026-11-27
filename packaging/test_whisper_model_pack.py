@@ -1,4 +1,5 @@
 import hashlib
+import io
 import json
 import socket
 import sys
@@ -10,6 +11,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import whisper_model_pack as packer
+import create_whisper_model_packs as downloader
 
 
 class WhisperModelPackTests(unittest.TestCase):
@@ -99,6 +101,55 @@ class WhisperModelPackTests(unittest.TestCase):
                     manifest,
                 )
                 self.assertIn("engines/test-model/LICENSE-MIT", archive.namelist())
+
+    def test_download_verifies_pinned_https_source_before_promoting_file(self):
+        payload = b"verified model bytes"
+        manifest = {
+            "source": "https://huggingface.co/example/model/resolve/abc123/model.bin",
+            "source_revision": "abc123",
+            "bytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "model.bin"
+            with mock.patch.object(
+                downloader, "load_manifest", return_value=(manifest, Path("manifest.json"))
+            ):
+                result = downloader.download_verified(
+                    "test-model", destination, opener=lambda request, timeout: io.BytesIO(payload)
+                )
+            self.assertEqual(result.read_bytes(), payload)
+            self.assertFalse(destination.with_name("model.bin.partial").exists())
+
+    def test_download_rejects_unpinned_source_and_corrupt_payload(self):
+        payload = b"not the model"
+        manifest = {
+            "source": "https://example.com/model.bin",
+            "source_revision": "abc123",
+            "bytes": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            destination = Path(directory) / "model.bin"
+            with mock.patch.object(
+                downloader, "load_manifest", return_value=(manifest, Path("manifest.json"))
+            ):
+                with self.assertRaisesRegex(ValueError, "pinned HTTPS"):
+                    downloader.download_verified("test-model", destination)
+                self.assertFalse(destination.exists())
+
+                manifest["source"] = (
+                    "https://huggingface.co/example/model/resolve/abc123/model.bin"
+                )
+                manifest["sha256"] = "0" * 64
+                with self.assertRaisesRegex(ValueError, "size and SHA-256"):
+                    downloader.download_verified(
+                        "test-model",
+                        destination,
+                        opener=lambda request, timeout: io.BytesIO(payload),
+                    )
+            self.assertFalse(destination.exists())
+            self.assertFalse(destination.with_name("model.bin.partial").exists())
 
 
 if __name__ == "__main__":

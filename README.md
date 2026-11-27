@@ -11,7 +11,7 @@ This independent studio uses Localwright at source level. There is no separate m
 - A separate Iced audio workspace (`speech-studio --audio`) provides bounded offline multi-format playback, selectable local input devices, native PCM16 WAV recording with explicit stop and live elapsed status, a clickable waveform/playhead, synchronized transcript cue seeking and editable timings with undo/redo.
 - UTF-8 SRT, WebVTT, LRC, JSON, and plain-text exchange, with bounded transcript and cue-range editing.
 - Unicode-aware transcript summaries and local language estimates.
-- Optional CPU Whisper integration. The model is not included in the baseline application or this repository; no runtime download occurs.
+- Optional CPU Whisper integration. Model weights are not included in the baseline application or repository; the app never downloads models. A separate manual workflow can build short-lived, hash-verified English and multilingual expansion-pack artifacts.
 
 The project is intended to remain free, local and offline, without tracking, advertising, subscriptions or premium features. See [the manifesto](MANIFESTO.md) for the motivation behind it.
 

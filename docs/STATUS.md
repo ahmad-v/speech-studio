@@ -35,7 +35,7 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 | export-lrc | Export cue start times and text to LRC | Linux fixture-tested |
 | open-json / export-json | Versioned UTF-8 transcript exchange with millisecond timings | Linux fixture and CLI-tested |
 | export-txt | Plain transcript text | Linux fixture-tested |
-| transcribe | Optional CPU whisper-rs adapter, private English or multilingual Tiny pack, or an explicit model path; multilingual pack pins its source bytes and uses language auto-detection | Existing English model app-relative smoke-tested. Multilingual artifact bytes verified against pinned Hugging Face LFS SHA-256 and offline pack route/tests added; hosted checks pending. Language quality, WER/CER and runtime RSS not measured |
+| transcribe | Optional CPU whisper-rs adapter, private English or multilingual Tiny pack, or an explicit model path; multilingual pack pins its source bytes and uses language auto-detection | Existing English model app-relative smoke-tested. Multilingual artifact bytes verified against pinned Hugging Face LFS SHA-256; Check and Linux Integration passed at `4412c9f`, while the all-target optional-ASR matrix and pack-artifact workflow are pending. Language quality, WER/CER and runtime RSS not measured |
 
 ## Known gaps
 
