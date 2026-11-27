@@ -18,6 +18,23 @@ pub(crate) struct Pcm16WavRecorder {
 
 impl Pcm16WavRecorder {
     pub(crate) fn create(path: &Path, channels: u16, sample_rate: u32) -> Result<Self, String> {
+        if !matches!(channels, 1 | 2) || !(8_000..=96_000).contains(&sample_rate) {
+            return Err("Recording requires mono or stereo input at 8–96 kHz".into());
+        }
+        let bytes_per_frame = u64::from(channels) * 2;
+        let max_frames_by_bytes = MAX_RECORDING_BYTES.saturating_sub(128) / bytes_per_frame;
+        let maximum_samples = max_frames_by_bytes
+            .min(u64::from(sample_rate) * MAX_RECORDING_SECONDS)
+            .saturating_mul(u64::from(channels));
+        Self::create_with_sample_limit(path, channels, sample_rate, maximum_samples)
+    }
+
+    fn create_with_sample_limit(
+        path: &Path,
+        channels: u16,
+        sample_rate: u32,
+        maximum_samples: u64,
+    ) -> Result<Self, String> {
         if !path
             .extension()
             .and_then(|extension| extension.to_str())
@@ -55,11 +72,6 @@ impl Pcm16WavRecorder {
                 return Err(format!("Could not initialize WAV recording: {error}"));
             }
         };
-        let bytes_per_frame = u64::from(channels) * 2;
-        let max_frames_by_bytes = MAX_RECORDING_BYTES.saturating_sub(128) / bytes_per_frame;
-        let maximum_samples = max_frames_by_bytes
-            .min(u64::from(sample_rate) * MAX_RECORDING_SECONDS)
-            .saturating_mul(u64::from(channels));
         Ok(Self {
             path: path.to_path_buf(),
             writer: Some(writer),
@@ -115,15 +127,54 @@ impl Pcm16WavRecorder {
             .map_err(|error| format!("Could not remove cancelled recording: {error}"))
     }
 
-    pub(crate) fn sample_rate(&self) -> u32 {
-        self.sample_rate
-    }
-
     #[cfg(feature = "audio-playback")]
     pub(crate) fn duration_ms(&self) -> u64 {
         (self.samples_written / u64::from(self.channels)).saturating_mul(1000)
             / u64::from(self.sample_rate)
     }
+}
+
+fn append_capture_blocks(
+    writer: &mut Pcm16WavRecorder,
+    blocks: impl IntoIterator<Item = Vec<i16>>,
+) -> Option<String> {
+    for block in blocks {
+        if let Err(error) = writer.append(&block) {
+            return Some(error);
+        }
+    }
+    None
+}
+
+pub(crate) struct FinalizedRecording {
+    pub(crate) path: PathBuf,
+    pub(crate) frames: u64,
+    pub(crate) sample_rate: u32,
+    pub(crate) partial_reason: Option<String>,
+}
+
+fn finalize_pending_capture(
+    mut writer: Pcm16WavRecorder,
+    blocks: impl IntoIterator<Item = Vec<i16>>,
+    mut partial_reason: Option<String>,
+) -> Result<FinalizedRecording, String> {
+    if let Some(write_error) = append_capture_blocks(&mut writer, blocks) {
+        add_partial_reason(&mut partial_reason, &write_error);
+    }
+    finish_recording_writer(writer, partial_reason)
+}
+
+fn finish_recording_writer(
+    writer: Pcm16WavRecorder,
+    partial_reason: Option<String>,
+) -> Result<FinalizedRecording, String> {
+    let (path, frames, sample_rate) = writer.finish()?;
+    Ok(FinalizedRecording {
+        path,
+        frames,
+        sample_rate,
+        partial_reason,
+    })
 }
 
 #[cfg(feature = "audio-playback")]
@@ -202,7 +253,7 @@ mod capture {
         let (sender, samples) = mpsc::sync_channel(CAPTURE_BLOCK_QUEUE);
         let overflowed = Arc::new(AtomicBool::new(false));
         let stream_failed = Arc::new(AtomicBool::new(false));
-        let mut writer = Pcm16WavRecorder::create(path, channels, sample_rate)?;
+        let writer = Pcm16WavRecorder::create(path, channels, sample_rate)?;
         let overflow_callback = Arc::clone(&overflowed);
         let failure_callback = Arc::clone(&stream_failed);
         let stream_result = match supported.sample_format() {
@@ -321,23 +372,31 @@ mod capture {
                 .map_or(0, Pcm16WavRecorder::duration_ms)
         }
 
-        pub(crate) fn finish(mut self) -> Result<(String, u64, u32), String> {
-            self.stream.take();
-            while let Ok(block) = self.samples.try_recv() {
-                let Some(writer) = self.writer.as_mut() else {
-                    return Err("Recording is already finalized".into());
-                };
-                if writer.append(&block).is_err() {
-                    // Preserve the valid portion already on disk and finalize it.
-                    break;
-                }
-            }
+        pub(crate) fn finish(mut self) -> Result<FinalizedRecording, String> {
+            // Dropping the stream closes its callback sender before the final queue drain.
+            drop(self.stream.take());
             let writer = self
                 .writer
                 .take()
                 .ok_or_else(|| "Recording is already finalized".to_owned())?;
-            let (_, frames, sample_rate) = writer.finish()?;
-            Ok((self.path.clone(), frames, sample_rate))
+            let mut writer = writer;
+            let mut partial_reason = None;
+            if let Some(write_error) = append_capture_blocks(&mut writer, self.samples.try_iter()) {
+                add_partial_reason(&mut partial_reason, &write_error);
+                // The stream is closed. Discard any remaining queued blocks after a write
+                // failure; the already-written prefix is finalized and reported as partial.
+                while self.samples.try_recv().is_ok() {}
+            }
+            if self.overflowed.swap(false, Ordering::AcqRel) {
+                add_partial_reason(
+                    &mut partial_reason,
+                    "input callback buffer overflowed; samples were dropped",
+                );
+            }
+            if self.stream_failed.swap(false, Ordering::AcqRel) {
+                add_partial_reason(&mut partial_reason, "input device reported a stream error");
+            }
+            finish_recording_writer(writer, partial_reason)
         }
 
         pub(crate) fn cancel(mut self) -> Result<String, String> {
@@ -355,6 +414,16 @@ mod capture {
 #[cfg(feature = "audio-playback")]
 pub(crate) use capture::{enumerate_inputs, start_capture, CaptureSession, InputDevice};
 
+fn add_partial_reason(reason: &mut Option<String>, addition: &str) {
+    match reason {
+        Some(reason) => {
+            reason.push_str("; ");
+            reason.push_str(addition);
+        }
+        None => *reason = Some(addition.to_owned()),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,7 +434,6 @@ mod tests {
         let path = directory.path().join("recorded.wav");
         let mut recorder = Pcm16WavRecorder::create(&path, 2, 48_000).unwrap();
         recorder.append(&[1_000, -1_000, 2_000, -2_000]).unwrap();
-        assert_eq!(recorder.sample_rate(), 48_000);
         let (finished_path, frames, sample_rate) = recorder.finish().unwrap();
         assert_eq!(finished_path, path);
         assert_eq!(frames, 2);
@@ -407,5 +475,32 @@ mod tests {
         assert!(recorder.append(&[1]).is_err());
         assert!(Pcm16WavRecorder::create(&directory.path().join("wrong.mp3"), 1, 16_000).is_err());
         assert!(Pcm16WavRecorder::create(&directory.path().join("bad.wav"), 8, 192_000).is_err());
+    }
+
+    #[test]
+    fn queued_write_failure_finalizes_valid_partial_wav_and_is_reported() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("partial.wav");
+        let mut recorder = Pcm16WavRecorder::create_with_sample_limit(&path, 2, 48_000, 2).unwrap();
+        recorder.append(&[100, -100]).unwrap();
+        let finalized =
+            finalize_pending_capture(recorder, [vec![200, -200], vec![300, -300]], None).unwrap();
+        assert_eq!(finalized.path, path);
+        assert_eq!(finalized.frames, 1);
+        assert_eq!(finalized.sample_rate, 48_000);
+        assert!(finalized
+            .partial_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("safety limit")));
+
+        let mut reader = hound::WavReader::open(finalized.path).unwrap();
+        assert_eq!(reader.duration(), 1);
+        assert_eq!(
+            reader
+                .samples::<i16>()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap(),
+            [100, -100]
+        );
     }
 }

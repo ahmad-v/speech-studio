@@ -921,17 +921,31 @@ fn finish_capture(
         return;
     };
     match capture.finish() {
-        Ok((path, frames, sample_rate)) => update_snapshot(snapshot, |view| {
+        Ok(finalized) => update_snapshot(snapshot, |view| {
             view.recording = false;
             view.recording_ms = 0;
-            let elapsed = if frames == 0 {
+            let elapsed = if finalized.frames == 0 {
                 "empty WAV".into()
             } else {
-                format!("{:.2} seconds", frames as f64 / f64::from(sample_rate))
+                format!(
+                    "{:.2} seconds",
+                    finalized.frames as f64 / f64::from(finalized.sample_rate)
+                )
             };
-            view.message = match reason {
-                Some(reason) => format!("Saved partial recording ({elapsed}) to {path}: {reason}"),
-                None => format!("Saved recording ({elapsed}) to {path}"),
+            let partial_reason = match (reason, finalized.partial_reason) {
+                (Some(first), Some(second)) => Some(format!("{first}; {second}")),
+                (Some(reason), None) | (None, Some(reason)) => Some(reason),
+                (None, None) => None,
+            };
+            view.message = match partial_reason {
+                Some(reason) => format!(
+                    "Saved partial recording ({elapsed}) to {}: {reason}",
+                    finalized.path.display()
+                ),
+                None => format!(
+                    "Saved recording ({elapsed}) to {}",
+                    finalized.path.display()
+                ),
             };
         }),
         Err(error) => update_snapshot(snapshot, |view| {
