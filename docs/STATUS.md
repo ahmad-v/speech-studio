@@ -15,6 +15,8 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 | open-lrc | Import timed LRC lyric lines into the SRT draft | Linux fixture-tested |
 | prepare-wav | PCM16 WAV at 16, 32, 44.1 or 48 kHz to mono 16 kHz | Linux fixture-tested |
 | audio-info | 16 kHz mono signed PCM16 WAV | Linux fixture-tested |
+| detect-voice-activity | Adaptive RMS and hysteresis intervals from 16 kHz mono PCM16 WAV, JSON report | Linux silence, synthetic activity and operation-output fixtures tested; energy heuristic only |
+| analyze-transcript | Local language estimate, Unicode linguistic counts and subtitle-time rate estimate, JSON report | Linux English, Russian, short-text, overlap and operation-output fixtures tested; estimates only |
 | replace-text | Exact transcript find and replace within cues | Linux fixture and CLI-tested |
 | open-srt | UTF-8 SRT subset; editable draft | Linux fixture-tested |
 | export-srt | Validated SRT output | Linux fixture-tested |
@@ -26,6 +28,6 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 
 ## Known gaps
 
-The standard edition omits the optional private ASR pack. Native inference is optional and disabled by default. Private Tiny English pack or explicit local model path with expected SHA-256 required; user hash is integrity, not authenticity. Cancellation cannot interrupt inference itself. Playback, wider media decoding, language accuracy, WER, translation, diarization and TTS remain open. SRT supports strict basic timecodes and sequential indices; overlapping segments allowed. LRC import infers cue ends from the next timestamp and assigns three seconds to the final cue; export drops cue-end precision and flattens multiline text.
+The standard edition omits the optional private ASR pack. Native inference is optional and disabled by default. Private Tiny English pack or explicit local model path with expected SHA-256 required; user hash is integrity, not authenticity. Cancellation cannot interrupt inference itself. Playback, wider media decoding, language accuracy across held-out fixtures, WER, translation, diarization and TTS remain open. The new VAD is an adaptive RMS energy heuristic, not a neural model, and has not been checked against labeled speech/noise recordings. Transcript language and rate values are estimates. SRT supports strict basic timecodes and sequential indices; overlapping segments allowed. LRC import infers cue ends from the next timestamp and assigns three seconds to the final cue; export drops cue-end precision and flattens multiline text.
 
 Hosted matrix, device, and packaging verification remain open. See [verification evidence](VERIFICATION.md) and [dependency review](DEPENDENCIES.md).
