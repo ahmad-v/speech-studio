@@ -69,6 +69,10 @@ jobs:
           if (-not $installation) { throw "Visual Studio installation was not found" }
           $clang = Join-Path $installation 'VC\Tools\Llvm\bin\clang-cl.exe'
           if (-not (Test-Path $clang)) {
+            $clang = Join-Path $env:ProgramFiles 'LLVM\bin\clang-cl.exe'
+          }
+          if (-not (Test-Path $clang)) {
+            $clang = Join-Path $installation 'VC\Tools\Llvm\bin\clang-cl.exe'
             $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
             & $installer modify --installPath $installation --add Microsoft.VisualStudio.Component.VC.Llvm.Clang --quiet --wait --norestart
             if ($LASTEXITCODE -ne 0) { throw "Could not install the Visual Studio Clang toolset" }
