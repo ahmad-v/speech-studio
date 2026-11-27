@@ -98,7 +98,7 @@ pub(crate) struct PlaybackClip {
 }
 
 #[cfg(feature = "audio-playback")]
-fn validate_playback_audio(bytes: &[u8], job: &Job) -> Result<(u64, u32, Vec<f32>)> {
+fn validate_playback_audio(bytes: std::sync::Arc<[u8]>, job: &Job) -> Result<(u64, u32, Vec<f32>)> {
     if bytes.is_empty() || bytes.len() > 128 * 1024 * 1024 {
         return Err(Error::input(
             "Audio must be nonempty and no larger than 128 MiB",
@@ -150,8 +150,8 @@ fn validate_playback_audio(bytes: &[u8], job: &Job) -> Result<(u64, u32, Vec<f32
 
 #[cfg(feature = "audio-playback")]
 pub(crate) fn load_playback_clip(path: &Path, job: &Job) -> Result<PlaybackClip> {
-    let bytes = read_bounded(path, 128 * 1024 * 1024)?;
-    let (frames, sample_rate, waveform) = validate_playback_audio(&bytes, job)?;
+    let bytes: std::sync::Arc<[u8]> = read_bounded(path, 128 * 1024 * 1024)?.into();
+    let (frames, sample_rate, waveform) = validate_playback_audio(bytes.clone(), job)?;
     let waveform = audio_model::bound_waveform(&waveform, 240);
     Ok(PlaybackClip {
         bytes: bytes.into(),
@@ -1448,7 +1448,8 @@ mod tests {
         writer.finalize().unwrap();
 
         let bytes = std::fs::read(path).unwrap();
-        let (frames, rate, waveform) = validate_playback_audio(&bytes, &Job::new()).unwrap();
+        let (frames, rate, waveform) =
+            validate_playback_audio(bytes.clone().into(), &Job::new()).unwrap();
         assert_eq!((frames, rate), (2, 32_000));
         assert_eq!(waveform.len(), 240);
         assert_eq!(waveform.iter().copied().fold(0.0f32, f32::max), 0.5);
@@ -1470,10 +1471,10 @@ mod tests {
         ];
 
         for (format, bytes) in fixtures {
-            let (frames, sample_rate, waveform) = validate_playback_audio(bytes, &Job::new())
-                .unwrap_or_else(|error| {
-                    panic!("bundled {format} decoder failed: {}", error.message)
-                });
+            let (frames, sample_rate, waveform) =
+                validate_playback_audio(std::sync::Arc::from(*bytes), &Job::new()).unwrap_or_else(
+                    |error| panic!("bundled {format} decoder failed: {}", error.message),
+                );
             assert!((8_000..=192_000).contains(&sample_rate), "{format}");
             assert!(frames > 0, "{format}");
             assert_eq!(waveform.len(), 240, "{format}");
