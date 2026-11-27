@@ -31,6 +31,9 @@ class WhisperModelPackTests(unittest.TestCase):
             hashlib.sha256(license_bytes).hexdigest(), manifest["license_sha256"]
         )
         self.assertEqual(manifest["language_mode"], "auto")
+        self.assertEqual(manifest["model_parameters"], 39_000_000)
+        self.assertEqual(manifest["upstream_vram_mib_estimate"], 1024)
+        self.assertEqual(manifest["cpu_threads"], 2)
         self.assertFalse(manifest["gpu_required"])
         self.assertIsNone(manifest["runtime_ram_bytes"])
 

@@ -1010,11 +1010,7 @@ fn private_model_manifest(parameter: &str) -> Option<&'static str> {
 }
 
 #[cfg(feature = "asr")]
-fn app_relative_model_path(
-    executable: &Path,
-    id: &str,
-    file: &str,
-) -> Result<std::path::PathBuf> {
+fn app_relative_model_path(executable: &Path, id: &str, file: &str) -> Result<std::path::PathBuf> {
     let executable = executable.canonicalize()?;
     let app_dir = executable
         .parent()
@@ -1835,12 +1831,9 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let executable = directory.path().join("speech-studio");
         std::fs::write(&executable, b"test executable path").unwrap();
-        let resolved = app_relative_model_path(
-            &executable,
-            "whisper-tiny-multilingual",
-            "ggml-tiny.bin",
-        )
-        .unwrap();
+        let resolved =
+            app_relative_model_path(&executable, "whisper-tiny-multilingual", "ggml-tiny.bin")
+                .unwrap();
         assert_eq!(
             resolved,
             directory
