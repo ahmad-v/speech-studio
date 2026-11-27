@@ -166,7 +166,7 @@ struct State {
 impl State {
     fn new() -> (Self, Task<Message>) {
         let snapshot = Arc::new(Mutex::new(Snapshot {
-            message: "Open a PCM16 WAV file to begin.".into(),
+            message: "Open a supported local audio file to begin.".into(),
             ..Snapshot::default()
         }));
         let (commands, receiver) = mpsc::channel();
@@ -201,8 +201,11 @@ impl State {
                 return Task::perform(
                     async {
                         rfd::AsyncFileDialog::new()
-                            .set_title("Open PCM16 WAV audio")
-                            .add_filter("PCM16 WAV", &["wav"])
+                            .set_title("Open local audio")
+                            .add_filter(
+                                "Audio (WAV, FLAC, MP3, OGG, AAC, AIFF)",
+                                &["wav", "flac", "mp3", "ogg", "aac", "m4a", "aiff"],
+                            )
                             .pick_file()
                             .await
                             .map(|file| file.path().to_path_buf())
@@ -521,9 +524,7 @@ impl State {
                     .spacing(12)
                     .align_y(iced::Alignment::Center)
                     .wrap(),
-                    text(
-                        "WAV only · local processing · physical audio device required for playback"
-                    ),
+                    text("Local audio decoding · physical audio device required for playback"),
                 ]
                 .spacing(18),
             )

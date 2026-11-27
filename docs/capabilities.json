@@ -108,7 +108,7 @@
     },
     {
       "operation": "play-wav",
-      "description": "Native Iced workspace for bounded mono/stereo PCM16 WAV: transport, slider and clickable waveform seek, canvas waveform/playhead, synchronized SRT/JSON cue list, cue seeking, validated timing edits, undo/redo and version 1 transcript project save",
+      "description": "Native Iced workspace for bounded offline WAV/FLAC/MP3/OGG/AAC/AIFF decoding and playback: transport, slider and clickable waveform seek, canvas waveform/playhead, synchronized SRT/JSON cue list, cue seeking, validated timing edits, undo/redo and version 1 transcript project save",
       "status": "implemented-unverified",
       "targets": [
         "x86_64-unknown-linux-gnu"

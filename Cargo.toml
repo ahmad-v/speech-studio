@@ -19,7 +19,7 @@ sha2 = "=0.10.9"
 unicode-segmentation = "=1.13.3"
 whatlang = "=0.18.0"
 whisper-rs = { version = "=0.14.4", optional = true }
-rodio = { version = "=0.20.1", default-features = false, features = ["wav"], optional = true }
+rodio = { version = "=0.20.1", default-features = false, features = ["symphonia-all", "symphonia-aiff"], optional = true }
 
 
 [features]

@@ -7,6 +7,7 @@ This independent studio uses Localwright at source level. There is no separate m
 ## Current functionality
 
 - Local PCM16 WAV inspection, preparation, peak waveform export, and an energy-based activity estimate.
+- Bounded native playback and waveform navigation for WAV, FLAC, MP3, OGG, AAC/M4A and AIFF decoders.
 - Bounded native WAV playback for mono or stereo PCM16 files; host audio device behavior is not hardware-verified.
 - A separate Iced audio workspace (`speech-studio --audio`) provides bounded WAV playback, a clickable canvas waveform/playhead for seeking, SRT and JSON transcript cue synchronization, cue seeking and validated timing edits with undo/redo.
 - UTF-8 SRT, WebVTT, LRC, JSON, and plain-text exchange, with bounded transcript and cue-range editing.

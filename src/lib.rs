@@ -12,7 +12,7 @@ use std::{io::Cursor, path::Path};
 pub const OPERATIONS:&[Operation]=&[
  Operation{id:"audio-info",label:"Audio inspection",hint:"Inspect local 16 kHz mono PCM16 WAV; maximum 10 minutes."},
  #[cfg(feature="audio-playback")]
- Operation{id:"play-wav",label:"Play WAV audio",hint:"Play a local mono or stereo PCM16 WAV (16, 32, 44.1 or 48 kHz, up to 10 minutes). Leave output and parameter blank. Cancel stops playback."},
+ Operation{id:"play-wav",label:"Play local audio",hint:"Open and play local WAV, FLAC, MP3, OGG, AAC/M4A or AIFF audio (up to 8 channels, 8–192 kHz, 10 minutes and 128 MiB). Leave output and parameter blank. Cancel stops playback. Format support depends on the bundled native decoders."},
  Operation{id:"detect-voice-activity",label:"Detect voice activity",hint:"Estimate active intervals from mono 16 kHz PCM16 WAV energy. Results are an energy heuristic, not neural VAD or diarization. Choose a new .json output."},
  Operation{id:"analyze-transcript",label:"Analyze transcript",hint:"Estimate language and linguistic counts from an SRT draft or file. Language confidence is from a local text classifier; no ASR confidence is invented. Choose a new .json output."},
  Operation{id:"waveform-svg",label:"Export WAV waveform",hint:"Export a peak waveform from 16 kHz mono PCM16 WAV to a new SVG."},
@@ -94,54 +94,60 @@ pub(crate) struct PlaybackClip {
 }
 
 #[cfg(feature = "audio-playback")]
-fn validate_playback_wav(bytes: &[u8], job: &Job) -> Result<(u64, u32, Vec<f32>)> {
+fn validate_playback_audio(bytes: &[u8], job: &Job) -> Result<(u64, u32, Vec<f32>)> {
     if bytes.is_empty() || bytes.len() > 128 * 1024 * 1024 {
         return Err(Error::input(
-            "WAV must be nonempty and no larger than 128 MiB",
+            "Audio must be nonempty and no larger than 128 MiB",
         ));
     }
-    let mut reader = hound::WavReader::new(Cursor::new(bytes)).map_err(err)?;
-    let spec = reader.spec();
-    if !matches!(spec.channels, 1 | 2)
-        || !matches!(spec.sample_rate, 16_000 | 32_000 | 44_100 | 48_000)
-        || spec.bits_per_sample != 16
-        || spec.sample_format != hound::SampleFormat::Int
-    {
-        return Err(Error::input(
-            "Expected mono or stereo PCM16 WAV at 16, 32, 44.1 or 48 kHz",
-        ));
+    let decoder = rodio::Decoder::new(Cursor::new(bytes))
+        .map_err(|error| Error::input(format!("Unsupported or invalid audio: {error}")))?;
+    let channels = decoder.channels();
+    let sample_rate = decoder.sample_rate();
+    let duration = decoder
+        .total_duration()
+        .ok_or_else(|| Error::input("Audio decoder did not provide a bounded duration"))?;
+    if !(1..=8).contains(&channels) || !(8_000..=192_000).contains(&sample_rate) {
+        return Err(Error::input("Audio must contain 1–8 channels at 8–192 kHz"));
     }
-    let frames = reader.duration();
-    if frames == 0 || frames > 600 * spec.sample_rate {
+    if duration.is_zero() || duration > Duration::from_secs(600) {
         return Err(Error::input(
             "Audio must be nonempty and no longer than 10 minutes",
         ));
     }
-    let expected_samples = u64::from(frames) * u64::from(spec.channels);
+    let frames = (duration.as_secs_f64() * f64::from(sample_rate)).ceil() as u64;
+    if frames == 0 || frames > 600 * u64::from(sample_rate) {
+        return Err(Error::input("Audio duration exceeds the 10-minute limit"));
+    }
+    let max_samples = frames
+        .checked_mul(u64::from(channels))
+        .ok_or_else(|| Error::input("Audio sample count overflow"))?;
     const WAVEFORM_BINS: usize = 240;
     let mut waveform = vec![0.0f32; WAVEFORM_BINS];
     let mut count = 0u64;
-    for sample in reader.samples::<i16>() {
+    for sample in decoder {
         if count % 4096 == 0 {
             job.check()?;
         }
-        let value = sample.map_err(err)?;
-        let frame = count / u64::from(spec.channels);
+        if count >= max_samples.saturating_add(u64::from(channels) * 2) {
+            return Err(Error::input("Decoded audio exceeds its declared duration"));
+        }
+        let frame = count / u64::from(channels);
         let bin = ((frame * WAVEFORM_BINS as u64) / u64::from(frames))
             .min((WAVEFORM_BINS - 1) as u64) as usize;
-        waveform[bin] = waveform[bin].max(f32::from(value).abs() / 32768.0);
+        waveform[bin] = waveform[bin].max(f32::from(sample).abs() / 32768.0);
         count += 1;
     }
-    if count != expected_samples {
-        return Err(Error::input("WAV sample data is incomplete"));
+    if count == 0 || count % u64::from(channels) != 0 {
+        return Err(Error::input("Decoded audio has incomplete sample frames"));
     }
-    Ok((u64::from(frames), spec.sample_rate, waveform))
+    Ok((count / u64::from(channels), sample_rate, waveform))
 }
 
 #[cfg(feature = "audio-playback")]
 pub(crate) fn load_playback_clip(path: &Path, job: &Job) -> Result<PlaybackClip> {
     let bytes = read_bounded(path, 128 * 1024 * 1024)?;
-    let (frames, sample_rate, waveform) = validate_playback_wav(&bytes, job)?;
+    let (frames, sample_rate, waveform) = validate_playback_audio(&bytes, job)?;
     let waveform = audio_model::bound_waveform(&waveform, 240);
     Ok(PlaybackClip {
         bytes: bytes.into(),
@@ -165,9 +171,9 @@ fn play_wav(input: &Path, job: &Job) -> Result<Outcome> {
     let sink = Sink::try_new(&stream_handle)
         .map_err(|error| Error::engine(format!("Could not start audio playback: {error}")))?;
     let decoder = Decoder::new(Cursor::new(bytes))
-        .map_err(|error| Error::input(format!("Could not decode WAV audio: {error}")))?;
+        .map_err(|error| Error::input(format!("Could not decode audio: {error}")))?;
     if decoder.sample_rate() != clip.sample_rate {
-        return Err(Error::input("WAV sample rate changed during decode"));
+        return Err(Error::input("Audio sample rate changed during decode"));
     }
     sink.append(decoder);
     while !sink.empty() {
@@ -180,7 +186,7 @@ fn play_wav(input: &Path, job: &Job) -> Result<Outcome> {
     drop(stream);
     Ok(Outcome {
         preview: format!(
-            "Played {:.3} seconds of PCM16 WAV audio",
+            "Played {:.3} seconds of local audio",
             duration_ms as f64 / 1000.0,
         ),
         ..Outcome::default()
@@ -1438,12 +1444,36 @@ mod tests {
         writer.finalize().unwrap();
 
         let bytes = std::fs::read(path).unwrap();
-        let (frames, rate, waveform) = validate_playback_wav(&bytes, &Job::new()).unwrap();
+        let (frames, rate, waveform) = validate_playback_audio(&bytes, &Job::new()).unwrap();
         assert_eq!((frames, rate), (2, 32_000));
         assert_eq!(waveform.len(), 240);
         assert_eq!(waveform.iter().copied().fold(0.0f32, f32::max), 0.5);
         let decoder = Decoder::new(std::io::Cursor::new(bytes)).unwrap();
         let decoded = decoder.collect::<Vec<_>>();
         assert_eq!(decoded, [16384, -16384, 8192, -8192]);
+    }
+
+    #[cfg(feature = "audio-playback")]
+    #[test]
+    fn bundled_decoder_accepts_supported_offline_audio_formats() {
+        let fixtures: &[(&str, &[u8])] = &[
+            ("WAV", include_bytes!("../tests/fixtures/tone.wav")),
+            ("FLAC", include_bytes!("../tests/fixtures/tone.flac")),
+            ("MP3", include_bytes!("../tests/fixtures/tone.mp3")),
+            ("OGG", include_bytes!("../tests/fixtures/tone.ogg")),
+            ("M4A", include_bytes!("../tests/fixtures/tone.m4a")),
+            ("AIFF", include_bytes!("../tests/fixtures/tone.aiff")),
+        ];
+
+        for (format, bytes) in fixtures {
+            let (frames, sample_rate, waveform) = validate_playback_audio(bytes, &Job::new())
+                .unwrap_or_else(|error| {
+                    panic!("bundled {format} decoder failed: {}", error.message)
+                });
+            assert!((8_000..=192_000).contains(&sample_rate), "{format}");
+            assert!(frames > 0, "{format}");
+            assert_eq!(waveform.len(), 240, "{format}");
+            assert!(waveform.iter().any(|peak| *peak > 0.0), "{format}");
+        }
     }
 }
