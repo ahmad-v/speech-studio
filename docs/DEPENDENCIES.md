@@ -6,6 +6,8 @@ A preliminary RustSec review used advisory database revision `c9f6c91a44db9d7174
 
 The optional ASR feature pins Whisper 0.14.4 because 0.14.0 was yanked. The repository ships without a model or model binary.
 
+The default audio playback feature pins Rodio 0.20.1 and uses CPAL for the native output device, with only the WAV decoder enabled. Linux builds require ALSA development headers; runtime playback depends on a working host audio device. The decoder tests do not verify physical playback, latency, or device selection. Native library license and platform behavior review remain part of the release review.
+
 Transcript analysis adds direct, exact pins to `whatlang 0.18.0` (MIT) for offline language estimates and `unicode-segmentation 1.13.3` (MIT OR Apache-2.0) for Unicode-aware text counts. The Cargo lockfile captures the language detector's transitive dependencies. Generated portable notices must be rebuilt and reviewed for each package configuration; this records declared crate licenses, not a full native-linkage or asset review.
 
 `cargo audit` and the SBOM task run only on the security schedule or manual dispatch, rather than every pull request. The SBOM includes all Cargo features and target-specific dependencies; it does not contain the separate Whisper model asset because no model is committed or packaged by the baseline workflow.

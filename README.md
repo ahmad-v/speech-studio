@@ -7,6 +7,7 @@ This independent studio uses Localwright at source level. There is no separate m
 ## Current functionality
 
 - Local PCM16 WAV inspection, preparation, peak waveform export, and an energy-based activity estimate.
+- Bounded native WAV playback for mono or stereo PCM16 files; host audio device behavior is not hardware-verified.
 - UTF-8 SRT, WebVTT, LRC, JSON, and plain-text exchange, with bounded transcript and cue-range editing.
 - Unicode-aware transcript summaries and local language estimates.
 - Optional CPU Whisper integration. The model is not included in the baseline application or this repository; no runtime download occurs.

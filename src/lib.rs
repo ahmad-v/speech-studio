@@ -7,6 +7,8 @@ use sha2::{Digest, Sha256};
 use std::{io::Cursor, path::Path};
 pub const OPERATIONS:&[Operation]=&[
  Operation{id:"audio-info",label:"Audio inspection",hint:"Inspect local 16 kHz mono PCM16 WAV; maximum 10 minutes."},
+ #[cfg(feature="audio-playback")]
+ Operation{id:"play-wav",label:"Play WAV audio",hint:"Play a local mono or stereo PCM16 WAV (16, 32, 44.1 or 48 kHz, up to 10 minutes). Leave output and parameter blank. Cancel stops playback."},
  Operation{id:"detect-voice-activity",label:"Detect voice activity",hint:"Estimate active intervals from mono 16 kHz PCM16 WAV energy. Results are an energy heuristic, not neural VAD or diarization. Choose a new .json output."},
  Operation{id:"analyze-transcript",label:"Analyze transcript",hint:"Estimate language and linguistic counts from an SRT draft or file. Language confidence is from a local text classifier; no ASR confidence is invented. Choose a new .json output."},
  Operation{id:"waveform-svg",label:"Export WAV waveform",hint:"Export a peak waveform from 16 kHz mono PCM16 WAV to a new SVG."},
@@ -77,6 +79,79 @@ fn wav(p: &Path, j: &Job) -> Result<Vec<f32>> {
         return Err(Error::input("Empty audio"));
     }
     Ok(samples)
+}
+#[cfg(feature = "audio-playback")]
+fn validate_playback_wav(bytes: &[u8], job: &Job) -> Result<(u64, u32)> {
+    if bytes.is_empty() || bytes.len() > 128 * 1024 * 1024 {
+        return Err(Error::input(
+            "WAV must be nonempty and no larger than 128 MiB",
+        ));
+    }
+    let mut reader = hound::WavReader::new(Cursor::new(bytes)).map_err(err)?;
+    let spec = reader.spec();
+    if !matches!(spec.channels, 1 | 2)
+        || !matches!(spec.sample_rate, 16_000 | 32_000 | 44_100 | 48_000)
+        || spec.bits_per_sample != 16
+        || spec.sample_format != hound::SampleFormat::Int
+    {
+        return Err(Error::input(
+            "Expected mono or stereo PCM16 WAV at 16, 32, 44.1 or 48 kHz",
+        ));
+    }
+    let frames = reader.duration();
+    if frames == 0 || frames > 600 * spec.sample_rate {
+        return Err(Error::input(
+            "Audio must be nonempty and no longer than 10 minutes",
+        ));
+    }
+    let expected_samples = u64::from(frames) * u64::from(spec.channels);
+    let mut count = 0u64;
+    for sample in reader.samples::<i16>() {
+        if count % 4096 == 0 {
+            job.check()?;
+        }
+        sample.map_err(err)?;
+        count += 1;
+    }
+    if count != expected_samples {
+        return Err(Error::input("WAV sample data is incomplete"));
+    }
+    Ok((u64::from(frames), spec.sample_rate))
+}
+
+#[cfg(feature = "audio-playback")]
+fn play_wav(input: &Path, job: &Job) -> Result<Outcome> {
+    use rodio::{Decoder, OutputStream, Sink, Source};
+    use std::time::Duration;
+
+    let bytes = read_bounded(input, 128 * 1024 * 1024)?;
+    let (frames, sample_rate) = validate_playback_wav(&bytes, job)?;
+    job.check()?;
+    let (stream, stream_handle) = OutputStream::try_default()
+        .map_err(|error| Error::engine(format!("Could not open audio output: {error}")))?;
+    let sink = Sink::try_new(&stream_handle)
+        .map_err(|error| Error::engine(format!("Could not start audio playback: {error}")))?;
+    let decoder = Decoder::new(Cursor::new(bytes))
+        .map_err(|error| Error::input(format!("Could not decode WAV audio: {error}")))?;
+    if decoder.sample_rate() != sample_rate {
+        return Err(Error::input("WAV sample rate changed during decode"));
+    }
+    sink.append(decoder);
+    while !sink.empty() {
+        if let Err(error) = job.check() {
+            sink.stop();
+            return Err(error);
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    drop(stream);
+    Ok(Outcome {
+        preview: format!(
+            "Played {:.3} seconds of PCM16 WAV audio",
+            frames as f64 / sample_rate as f64,
+        ),
+        ..Outcome::default()
+    })
 }
 fn prepare_wav(input: &Path, output: &Path, job: &Job) -> Result<u32> {
     if output.extension().and_then(|ext| ext.to_str()) != Some("wav") {
@@ -732,6 +807,8 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
     j.check()?;
     let mut out = Outcome::default();
     match r.operation.as_str() {
+        #[cfg(feature = "audio-playback")]
+        "play-wav" => return play_wav(&r.input, &j),
         "prepare-wav" => {
             let frames = prepare_wav(&r.input, &r.output, &j)?;
             out.preview = format!("Prepared {frames} mono samples at 16,000 Hz");
@@ -1303,5 +1380,37 @@ mod tests {
         w.write_sample(16384i16).unwrap();
         w.finalize().unwrap();
         assert_eq!(wav(&p, &Job::new()).unwrap(), vec![0.5]);
+    }
+
+    #[cfg(feature = "audio-playback")]
+    #[test]
+    fn playback_validation_and_decoder_cover_stereo_pcm16_wav() {
+        use rodio::Decoder;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("stereo.wav");
+        let mut writer = hound::WavWriter::create(
+            &path,
+            hound::WavSpec {
+                channels: 2,
+                sample_rate: 32_000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )
+        .unwrap();
+        for sample in [16384i16, -16384, 8192, -8192] {
+            writer.write_sample(sample).unwrap();
+        }
+        writer.finalize().unwrap();
+
+        let bytes = std::fs::read(path).unwrap();
+        assert_eq!(
+            validate_playback_wav(&bytes, &Job::new()).unwrap(),
+            (2, 32_000)
+        );
+        let decoder = Decoder::new(std::io::Cursor::new(bytes)).unwrap();
+        let decoded = decoder.collect::<Vec<_>>();
+        assert_eq!(decoded, [16384, -16384, 8192, -8192]);
     }
 }

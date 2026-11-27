@@ -17,12 +17,14 @@ sha2 = "=0.10.8"
 unicode-segmentation = "=1.13.3"
 whatlang = "=0.18.0"
 whisper-rs = { version = "=0.14.4", optional = true }
+rodio = { version = "=0.20.1", default-features = false, features = ["wav"], optional = true }
 
 
 [features]
-default = ["gui"]
+default = ["gui", "audio-playback"]
 gui = ["dep:localwright-ui"]
 asr = ["dep:whisper-rs"]
+audio-playback = ["dep:rodio"]
 
 [dev-dependencies]
 tempfile = "=3.19.1"

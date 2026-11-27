@@ -69,7 +69,7 @@ jobs:
         if: steps.scope.outputs.code_changed == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libasound2-dev
 
       - name: Restore Cargo registry and target cache
         if: steps.scope.outputs.code_changed == 'true'
