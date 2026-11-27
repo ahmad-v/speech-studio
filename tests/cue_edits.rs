@@ -158,3 +158,73 @@ fn ten_additional_transcript_edits_validate_and_preserve_timing() {
     }
     assert_eq!(fs::read_to_string(input).unwrap(), source);
 }
+
+#[test]
+fn ten_cue_text_operations_edit_only_the_selected_range() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("text-tools.srt");
+    let source = "1\n00:00:01,000 --> 00:00:02,000\n  Café   talks  \nnext line\nnext line\n\n2\n00:00:03,000 --> 00:00:04,000\nGOOD morning. HELLO WORLD!\n\n3\n00:00:05,000 --> 00:00:06,000\nb\nA\na\n";
+    fs::write(&input, source).unwrap();
+    let edit = |operation: &str, parameter: &str| {
+        speech_studio::handle(
+            Request {
+                operation: operation.into(),
+                input: input.clone(),
+                parameter: parameter.into(),
+                ..Request::default()
+            },
+            Job::new(),
+        )
+        .unwrap_or_else(|error| panic!("{operation}: {error}"))
+        .draft
+        .unwrap()
+    };
+
+    assert!(edit("uppercase-cue-range", r#"{"first":1,"last":1}"#).contains("CAFÉ   TALKS"));
+    assert!(edit("lowercase-cue-range", r#"{"first":2,"last":2}"#)
+        .contains("good morning. hello world!"));
+    assert!(edit("title-case-cue-range", r#"{"first":1,"last":1}"#)
+        .contains("Café Talks\nNext Line\nNext Line"));
+    assert!(edit("sentence-case-cue-range", r#"{"first":2,"last":2}"#)
+        .contains("Good morning. Hello world!"));
+    assert!(edit("trim-cue-range", r#"{"first":1,"last":1}"#)
+        .contains("Café   talks  \nnext line\nnext line"));
+    assert!(
+        edit("prefix-cue-range", r#"{"first":1,"last":2,"text":"[S] "}"#).contains("[S]   Café")
+    );
+    assert!(
+        edit("suffix-cue-range", r#"{"first":2,"last":2,"text":"!"}"#)
+            .contains("GOOD morning. HELLO WORLD!!")
+    );
+    assert!(edit("reverse-cue-lines-range", r#"{"first":3,"last":3}"#).contains("a\nA\nb"));
+    assert!(edit("sort-cue-lines-range", r#"{"first":3,"last":3}"#).contains("A\na\nb"));
+    let deduplicated = edit("deduplicate-cue-lines-range", r#"{"first":1,"last":1}"#);
+    assert_eq!(deduplicated.matches("next line").count(), 1);
+    assert!(deduplicated.contains("00:00:01,000 --> 00:00:02,000"));
+}
+
+#[test]
+fn cue_text_operations_reject_invalid_ranges_and_empty_results() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("text-errors.srt");
+    fs::write(&input, "1\n00:00:01,000 --> 00:00:02,000\nKeep me\n").unwrap();
+    for (operation, parameter) in [
+        ("uppercase-cue-range", r#"{"first":2,"last":1}"#),
+        ("prefix-cue-range", r#"{"first":0,"last":1,"text":"x"}"#),
+        (
+            "sort-cue-lines-range",
+            r#"{"first":1,"last":1,"unexpected":true}"#,
+        ),
+    ] {
+        let result = speech_studio::handle(
+            Request {
+                operation: operation.into(),
+                input: input.clone(),
+                parameter: parameter.into(),
+                ..Request::default()
+            },
+            Job::new(),
+        );
+        assert!(result.is_err(), "{operation}");
+    }
+}

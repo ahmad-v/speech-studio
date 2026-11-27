@@ -32,6 +32,16 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"join-cue-lines",label:"Join cue lines",hint:"Joins each cue's lines with spaces and collapses whitespace."},
  Operation{id:"swap-cue-text",label:"Swap cue text",hint:r#"Enter JSON {"first":1,"second":2}. Swaps text only; each cue keeps its timing."#},
  Operation{id:"replace-text-range",label:"Replace text in cue range",hint:r#"Enter JSON {"first":1,"last":3,"find":"old","replace":"new"}. Case-sensitive literal replacement within selected cues."#},
+ Operation{id:"uppercase-cue-range",label:"Uppercase cue range",hint:r#"Enter JSON {"first":1,"last":3}. Uppercases text in the inclusive 1-based cue range."#},
+ Operation{id:"lowercase-cue-range",label:"Lowercase cue range",hint:r#"Enter JSON {"first":1,"last":3}. Lowercases text in the inclusive 1-based cue range."#},
+ Operation{id:"title-case-cue-range",label:"Title case cue range",hint:r#"Enter JSON {"first":1,"last":3}. Capitalizes each word and normalizes spaces within each line."#},
+ Operation{id:"sentence-case-cue-range",label:"Sentence case cue range",hint:r#"Enter JSON {"first":1,"last":3}. Lowercases text then capitalizes sentence starts and line starts."#},
+ Operation{id:"trim-cue-range",label:"Trim cue range",hint:r#"Enter JSON {"first":1,"last":3}. Removes leading and trailing Unicode whitespace from selected cues."#},
+ Operation{id:"prefix-cue-range",label:"Prefix cue range",hint:r#"Enter JSON {"first":1,"last":3,"text":"[SPEAKER] "}. Adds a prefix to each selected cue."#},
+ Operation{id:"suffix-cue-range",label:"Suffix cue range",hint:r#"Enter JSON {"first":1,"last":3,"text":" (verified)"}. Adds a suffix to each selected cue."#},
+ Operation{id:"reverse-cue-lines-range",label:"Reverse cue line order",hint:r#"Enter JSON {"first":1,"last":3}. Reverses lines within each selected cue."#},
+ Operation{id:"sort-cue-lines-range",label:"Sort cue lines",hint:r#"Enter JSON {"first":1,"last":3}. Sorts each selected cue's lines in Unicode lexical order."#},
+ Operation{id:"deduplicate-cue-lines-range",label:"Remove duplicate cue lines",hint:r#"Enter JSON {"first":1,"last":3}. Keeps the first exact occurrence of each line per cue."#},
  Operation{id:"shift-timing",label:"Shift subtitle timing",hint:"Enter a signed offset in milliseconds. Uses the current draft or SRT input and returns a new draft."},
  Operation{id:"export-json",label:"Save transcript JSON",hint:"Export an SRT file or the edited draft with millisecond timestamps. Choose a new .json file."},
  Operation{id:"export-txt",label:"Save text",hint:"Extract text from editable SRT draft or input SRT. New .txt output."},
@@ -829,7 +839,17 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
         | "wrap-cue-text"
         | "join-cue-lines"
         | "swap-cue-text"
-        | "replace-text-range" => {
+        | "replace-text-range"
+        | "uppercase-cue-range"
+        | "lowercase-cue-range"
+        | "title-case-cue-range"
+        | "sentence-case-cue-range"
+        | "trim-cue-range"
+        | "prefix-cue-range"
+        | "suffix-cue-range"
+        | "reverse-cue-lines-range"
+        | "sort-cue-lines-range"
+        | "deduplicate-cue-lines-range" => {
             let source = if r.draft.trim().is_empty() {
                 String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?
             } else {
