@@ -113,7 +113,7 @@
       "targets": [
         "x86_64-unknown-linux-gnu"
       ],
-      "fixture_status": "Stereo PCM16 bounds and Rodio decoder fixture added; local test execution blocked by disk exhaustion; physical audio output and native device backends pending"
+      "fixture_status": "Linux Integration passed stereo PCM16 bounds and Rodio decoder fixtures; physical audio output and native device backends remain unverified"
     },
     {
       "operation": "audio-info",
