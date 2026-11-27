@@ -1836,11 +1836,10 @@ mod tests {
         let resolved =
             app_relative_model_path(&executable, "whisper-tiny-multilingual", "ggml-tiny.bin")
                 .unwrap();
+        let canonical_directory = directory.path().canonicalize().unwrap();
         assert_eq!(
             resolved,
-            directory
-                .path()
-                .join("engines/whisper-tiny-multilingual/ggml-tiny.bin")
+            canonical_directory.join("engines/whisper-tiny-multilingual/ggml-tiny.bin")
         );
     }
 
