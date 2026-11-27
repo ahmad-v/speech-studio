@@ -497,7 +497,7 @@ impl State {
                 .spacing(18),
             )
             .width(Length::Fill)
-            .height(Length::Fill)
+            .height(Length::Shrink)
             .padding(24),
         )
         .height(Length::Fill)
