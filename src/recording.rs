@@ -180,8 +180,7 @@ fn finish_recording_writer(
 #[cfg(feature = "audio-playback")]
 mod capture {
     use super::{
-        add_partial_reason, append_capture_blocks, finish_recording_writer, FinalizedRecording,
-        Pcm16WavRecorder,
+        add_partial_reason, finalize_pending_capture, FinalizedRecording, Pcm16WavRecorder,
     };
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::{
@@ -382,14 +381,7 @@ mod capture {
                 .writer
                 .take()
                 .ok_or_else(|| "Recording is already finalized".to_owned())?;
-            let mut writer = writer;
             let mut partial_reason = None;
-            if let Some(write_error) = append_capture_blocks(&mut writer, self.samples.try_iter()) {
-                add_partial_reason(&mut partial_reason, &write_error);
-                // The stream is closed. Discard any remaining queued blocks after a write
-                // failure; the already-written prefix is finalized and reported as partial.
-                while self.samples.try_recv().is_ok() {}
-            }
             if self.overflowed.swap(false, Ordering::AcqRel) {
                 add_partial_reason(
                     &mut partial_reason,
@@ -399,7 +391,9 @@ mod capture {
             if self.stream_failed.swap(false, Ordering::AcqRel) {
                 add_partial_reason(&mut partial_reason, "input device reported a stream error");
             }
-            finish_recording_writer(writer, partial_reason)
+            // The stream is closed before draining. The helper preserves a valid written
+            // prefix and records any queue write failure as an explicit partial result.
+            finalize_pending_capture(writer, self.samples.try_iter(), partial_reason)
         }
 
         pub(crate) fn cancel(mut self) -> Result<String, String> {
