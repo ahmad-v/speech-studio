@@ -2173,7 +2173,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 [[package]]
 name = "localwright-core"
 version = "0.1.0"
-source = "git+https://github.com/ahmad-v/localwright?rev=bfed19beb278265069664c4080191a5807cef7cf#bfed19beb278265069664c4080191a5807cef7cf"
+source = "git+https://github.com/ahmad-v/localwright?rev=e93519a845049a9cecfc044d66fb3de84e0d4099#e93519a845049a9cecfc044d66fb3de84e0d4099"
 dependencies = [
  "command-group",
  "serde",
@@ -2185,7 +2185,7 @@ dependencies = [
 [[package]]
 name = "localwright-ui"
 version = "0.1.0"
-source = "git+https://github.com/ahmad-v/localwright?rev=bfed19beb278265069664c4080191a5807cef7cf#bfed19beb278265069664c4080191a5807cef7cf"
+source = "git+https://github.com/ahmad-v/localwright?rev=e93519a845049a9cecfc044d66fb3de84e0d4099#e93519a845049a9cecfc044d66fb3de84e0d4099"
 dependencies = [
  "futures",
  "iced",
