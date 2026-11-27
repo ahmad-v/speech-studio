@@ -35,4 +35,16 @@ WAV preparation downmixes and uses weighted frame averaging for supported PCM16 
 - `merge-cues`. Enter first and last cue numbers, such as `2,4`. Text is separated by newlines and the merged cue ends at the latest selected end time.
 - `delete-cue`. Enter the 1-based cue number. At least one cue must remain.
 
+The next ten transcript edits operate on a validated SRT draft and can optionally write a new `.srt` file:
+
+- `replace-cue-text`: JSON `{"cue":1,"text":"New words"}` replaces one cue while preserving its time.
+- `insert-cue`: JSON `{"index":2,"start_ms":2000,"end_ms":2800,"text":"Inserted"}` inserts at a 1-based position and checks time order and range.
+- `set-cue-timing`: JSON `{"cue":1,"start_ms":1000,"end_ms":2500}` changes one cue's interval; end must be after start and timestamps must remain ordered.
+- `shift-cue-range`: JSON `{"first":2,"last":4,"offset_ms":-100}` shifts a 1-based inclusive cue range and rejects underflow, overflow or order violations.
+- `remove-duplicate-cues` removes only exact repeated records with the same text and both timestamps; it keeps the first.
+- `normalize-cue-whitespace` collapses whitespace within each cue line and preserves nonempty line boundaries. `join-cue-lines` flattens all cue lines to one space-separated line.
+- `wrap-cue-text`: JSON `{"max_graphemes":42}` wraps at word boundaries using Unicode grapheme counts. A single long word is preserved intact.
+- `swap-cue-text`: JSON `{"first":1,"second":2}` swaps text while leaving the two time intervals fixed.
+- `replace-text-range`: JSON `{"first":1,"last":3,"find":"old","replace":"new"}` performs case-sensitive literal replacement in an inclusive cue range.
+
 The five cue edits return an SRT draft. You can also supply a new .srt output path to save the edit immediately.
