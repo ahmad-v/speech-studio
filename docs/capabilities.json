@@ -61,6 +61,13 @@
       "fixture_status": "Linux x86_64 WebVTT import fixture passed"
     },
     {
+      "operation": "open-lrc",
+      "description": "Import timestamped LRC lyric lines into an editable SRT draft",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux metadata, global offset, repeated timestamps, duration inference and invalid-input fixtures passed"
+    },
+    {
       "operation": "prepare-wav",
       "description": "PCM16 WAV preparation for speech recognition",
       "status": "implemented-unverified",
@@ -73,6 +80,13 @@
       "status": "implemented-unverified",
       "targets": [],
       "fixture_status": "Linux fixture passed"
+    },
+    {
+      "operation": "export-lrc",
+      "description": "Export cue starts and text as duration-lossy LRC lyrics",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux centisecond rendering and multiline flattening fixtures passed"
     },
     {
       "operation": "audio-info",

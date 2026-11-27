@@ -9,6 +9,7 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"waveform-svg",label:"Export WAV waveform",hint:"Export a peak waveform from 16 kHz mono PCM16 WAV to a new SVG."},
  Operation{id:"prepare-wav",label:"Prepare WAV for speech recognition",hint:"Convert 16, 32, 44.1 or 48 kHz mono/stereo PCM16 WAV to a new 16 kHz mono WAV."},
  Operation{id:"open-vtt",label:"Open WebVTT",hint:"Import plain-text WebVTT cues into the editable SRT draft."},
+ Operation{id:"open-lrc",label:"Open LRC lyrics",hint:"Import timestamped UTF-8 LRC lines into the editable draft. Cue ends are inferred from the next line; the last cue receives a 3-second duration."},
  Operation{id:"open-json",label:"Open transcript JSON",hint:"Load a version 1 transcript JSON file into the editable draft."},
  Operation{id:"open-srt",label:"Open SRT",hint:"Load and validate UTF-8 SRT into editable draft."},
  Operation{id:"export-srt",label:"Save SRT",hint:"Validate editable draft, or load SRT from input if draft empty. New .srt output."},
@@ -22,6 +23,7 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"export-json",label:"Save transcript JSON",hint:"Export an SRT file or the edited draft with millisecond timestamps. Choose a new .json file."},
  Operation{id:"export-txt",label:"Save text",hint:"Extract text from editable SRT draft or input SRT. New .txt output."},
  Operation{id:"export-vtt",label:"Save WebVTT",hint:"Export an SRT file or edited SRT draft as plain-text WebVTT cues. Choose a new .vtt output."},
+ Operation{id:"export-lrc",label:"Save LRC lyrics",hint:"Export cue start times and text to LRC. LRC has no cue end times; multiline text is joined with spaces."},
  #[cfg(feature="asr")]
  Operation{id:"transcribe",label:"Transcribe (experimental)",hint:"16 kHz mono PCM16 WAV. Leave the parameter blank for the private English pack, or supply absolute model path | SHA256. CPU inference."}];
 fn err(e: impl std::fmt::Display) -> Error {
@@ -409,6 +411,155 @@ fn parse_vtt(source: &str, job: &Job) -> Result<Vec<Segment>> {
     Ok(segments)
 }
 
+fn parse_lrc(source: &str, job: &Job) -> Result<Vec<Segment>> {
+    if source.len() > 2 * 1024 * 1024 {
+        return Err(Error::input("Lyrics exceed limit"));
+    }
+    let source = source
+        .trim_start_matches('\u{feff}')
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+    let offset = source
+        .lines()
+        .rev()
+        .find_map(|line| {
+            line.trim()
+                .strip_prefix("[offset:")
+                .and_then(|v| v.strip_suffix(']'))
+        })
+        .map(str::parse::<i64>)
+        .transpose()
+        .map_err(err)?
+        .unwrap_or(0);
+    let mut timed = Vec::<(u64, String)>::new();
+    let mut draft_budget = 0usize;
+    for line in source.lines() {
+        job.check()?;
+        if line.len() > 16 * 1024 {
+            return Err(Error::input("LRC line exceeds limit"));
+        }
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line
+            .strip_prefix("[offset:")
+            .and_then(|v| v.strip_suffix(']'))
+            .is_some()
+        {
+            continue;
+        }
+        if ["ar:", "al:", "ti:", "au:", "re:", "ve:", "by:"]
+            .iter()
+            .any(|tag| line.starts_with(&format!("[{tag}")) && line.ends_with(']'))
+        {
+            continue;
+        }
+        let mut rest = line;
+        let mut stamps = Vec::new();
+        while let Some(tagged) = rest.strip_prefix('[') {
+            let Some((tag, suffix)) = tagged.split_once(']') else {
+                break;
+            };
+            if tag.contains(':') {
+                let (clock, fraction) = tag.split_once('.').unwrap_or((tag, ""));
+                let (minutes, seconds) = clock
+                    .split_once(':')
+                    .ok_or_else(|| Error::input("Invalid LRC timestamp"))?;
+                if minutes.is_empty()
+                    || !minutes.bytes().all(|b| b.is_ascii_digit())
+                    || seconds.len() != 2
+                    || !seconds.bytes().all(|b| b.is_ascii_digit())
+                {
+                    return Err(Error::input("Invalid LRC timestamp"));
+                }
+                let minutes = minutes.parse::<u64>().map_err(err)?;
+                let seconds = seconds.parse::<u64>().map_err(err)?;
+                if seconds >= 60
+                    || !matches!(fraction.len(), 0..=3)
+                    || !fraction.bytes().all(|b| b.is_ascii_digit())
+                {
+                    return Err(Error::input("Invalid LRC timestamp"));
+                }
+                let millis = match fraction.len() {
+                    0 => 0,
+                    1 => fraction.parse::<u64>().map_err(err)? * 100,
+                    2 => fraction.parse::<u64>().map_err(err)? * 10,
+                    _ => fraction.parse::<u64>().map_err(err)?,
+                };
+                let base = minutes
+                    .checked_mul(60_000)
+                    .and_then(|v| v.checked_add(seconds * 1000 + millis))
+                    .ok_or_else(|| Error::input("LRC timestamp overflow"))?;
+                let adjusted = i128::from(base) + i128::from(offset);
+                if !(0..=100 * 60 * 60 * 1000 - 1).contains(&adjusted) {
+                    return Err(Error::input(
+                        "LRC offset is outside the supported time range",
+                    ));
+                }
+                stamps.push(adjusted as u64);
+                rest = suffix;
+            } else {
+                break;
+            }
+        }
+        if stamps.is_empty() {
+            return Err(Error::input("Expected timestamped LRC lyric line"));
+        }
+        if rest.trim().is_empty() {
+            return Err(Error::input("LRC lyric text is empty"));
+        }
+        if timed.len().saturating_add(stamps.len()) > 20_000 {
+            return Err(Error::input("LRC cue count exceeds 20,000"));
+        }
+        draft_budget = draft_budget
+            .checked_add(rest.len().saturating_mul(stamps.len()))
+            .and_then(|bytes| bytes.checked_add(64 * stamps.len()))
+            .filter(|&bytes| bytes <= 2 * 1024 * 1024)
+            .ok_or_else(|| Error::input("Expanded LRC draft exceeds 2 MiB"))?;
+        timed.extend(stamps.into_iter().map(|time| (time, rest.to_owned())));
+    }
+    timed.sort_by_key(|(time, _)| *time);
+    if timed.is_empty() || timed.windows(2).any(|pair| pair[0].0 >= pair[1].0) {
+        return Err(Error::input("LRC timestamps must be unique and increasing"));
+    }
+    let mut segments = Vec::with_capacity(timed.len());
+    for index in 0..timed.len() {
+        let (start, text) = &timed[index];
+        let end = timed
+            .get(index + 1)
+            .map(|pair| pair.0)
+            .unwrap_or_else(|| start.saturating_add(3000));
+        if end > 100 * 60 * 60 * 1000 - 1 {
+            return Err(Error::input("Final LRC cue exceeds supported duration"));
+        }
+        segments.push(Segment {
+            start: *start,
+            end,
+            text: text.clone(),
+        });
+    }
+    let rendered = render(&segments);
+    parse(&rendered)?;
+    Ok(segments)
+}
+
+fn render_lrc(segments: &[Segment], job: &Job) -> Result<String> {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    for segment in segments {
+        job.check()?;
+        let centiseconds = segment.start / 10;
+        let minutes = centiseconds / 6000;
+        let seconds = centiseconds / 100 % 60;
+        let fraction = centiseconds % 100;
+        let text = segment.text.replace(['\n', '\r'], " ");
+        writeln!(out, "[{minutes:02}:{seconds:02}.{fraction:02}]{text}")
+            .expect("String writes cannot fail");
+    }
+    Ok(out)
+}
+
 fn render(segments: &[Segment]) -> String {
     segments
         .iter()
@@ -597,6 +748,19 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
             out.warnings
                 .push("Cue identifiers and NOTE blocks are omitted.".into());
         }
+        "open-lrc" => {
+            let source =
+                String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?;
+            let segments = parse_lrc(&source, &j)?;
+            let draft = render(&segments);
+            parse(&draft)?;
+            out.preview = format!(
+                "{} LRC lyric lines imported into the editable draft",
+                segments.len()
+            );
+            out.draft = Some(draft);
+            out.warnings.push("LRC has no cue end times; each cue ends at the next timestamp and the final cue is assigned a 3-second duration.".into());
+        }
         "replace-text" | "shift-timing" | "scale-timing" | "trim-cues" | "split-cue"
         | "merge-cues" | "delete-cue" => {
             let source = if r.draft.trim().is_empty() {
@@ -635,7 +799,7 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
             out.preview = format!("{count} transcript segments imported");
             out.draft = Some(draft);
         }
-        "open-srt" | "export-srt" | "export-txt" | "export-vtt" | "export-json" => {
+        "open-srt" | "export-srt" | "export-txt" | "export-vtt" | "export-lrc" | "export-json" => {
             let source = if r.operation == "open-srt" || r.draft.trim().is_empty() {
                 String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?
             } else {
@@ -656,6 +820,7 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
                         })?,
                     ),
                     "export-vtt" => ("vtt", render_vtt(&segments, &j)?),
+                    "export-lrc" => ("lrc", render_lrc(&segments, &j)?),
                     _ => (
                         "txt",
                         segments
@@ -670,6 +835,9 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
                 }
                 j.check()?;
                 write_bytes(&r.output, content.as_bytes())?;
+                if r.operation == "export-lrc" {
+                    out.warnings.push("LRC stores cue starts only; cue end times are omitted and multiline text is flattened.".into());
+                }
                 out.written = Some(r.output);
             }
             out.preview = format!("{count} subtitle segments");
@@ -823,6 +991,71 @@ mod tests {
             std::fs::read_to_string(output).unwrap(),
             "WEBVTT\n\n00:00:00.500 --> 00:00:02.100\nCafé &amp; &lt;text&gt; --&gt; here\n\n"
         );
+    }
+
+    #[test]
+    fn lrc_roundtrip_uses_explicit_inferred_duration_and_reports_loss() {
+        let source = "[ti:Example]\n[offset:100]\n[00:01.23]First line\n[00:03.00][00:04.00]Repeated lyric\n";
+        let segments = parse_lrc(source, &Job::new()).unwrap();
+        assert_eq!(
+            segments,
+            [
+                Segment {
+                    start: 1330,
+                    end: 3100,
+                    text: "First line".into()
+                },
+                Segment {
+                    start: 3100,
+                    end: 4100,
+                    text: "Repeated lyric".into()
+                },
+                Segment {
+                    start: 4100,
+                    end: 7100,
+                    text: "Repeated lyric".into()
+                },
+            ]
+        );
+        let rendered = render_lrc(&segments, &Job::new()).unwrap();
+        assert_eq!(
+            rendered,
+            "[00:01.33]First line\n[00:03.10]Repeated lyric\n[00:04.10]Repeated lyric\n"
+        );
+        assert!(parse_lrc("[00:01.00]one\n[00:01.00]two", &Job::new()).is_err());
+        assert!(parse_lrc("[00:60.00]bad", &Job::new()).is_err());
+        let excessive = format!("{}lyrics", "[00:01.00]".repeat(20_001));
+        assert!(parse_lrc(&excessive, &Job::new()).is_err());
+    }
+
+    #[test]
+    fn lrc_export_operation_is_no_overwrite_and_flattens_multiline_text() {
+        let directory = tempfile::tempdir().unwrap();
+        let output = directory.path().join("out.lrc");
+        handle(
+            Request {
+                operation: "export-lrc".into(),
+                output: output.clone(),
+                draft: "1\n00:00:01,230 --> 00:00:03,000\nFirst\nsecond".into(),
+                ..Request::default()
+            },
+            Job::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&output).unwrap(),
+            "[00:01.23]First second\n"
+        );
+        assert!(handle(
+            Request {
+                operation: "export-lrc".into(),
+                output,
+                draft: "1\n00:00:01,230 --> 00:00:03,000\nFirst".into(),
+                ..Request::default()
+            },
+            Job::new()
+        )
+        .is_err());
     }
     #[test]
     fn prepares_stereo_wav_with_a_partial_final_group() {
