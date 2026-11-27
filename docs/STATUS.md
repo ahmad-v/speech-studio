@@ -25,7 +25,7 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 | open-lrc | Import timed LRC lyric lines into the SRT draft | Linux fixture-tested |
 | prepare-wav | PCM16 WAV at 16, 32, 44.1 or 48 kHz to mono 16 kHz | Linux fixture-tested |
 | audio-info | 16 kHz mono signed PCM16 WAV | Linux fixture-tested |
-| play-wav | Native Iced audio workspace: bounded PCM16 WAV playback, waveform/playhead, SRT/JSON cue synchronization and seeking, validated cue timing edits, versioned project save, undo/redo | WAV decoder/bounds fixture passed in GitHub Integration; new headless model/transport tests added but not run locally due disk limits; physical audio-device playback not verified |
+| play-wav | Native Iced audio workspace: bounded PCM16 WAV playback, clickable waveform/playhead seek, SRT/JSON cue synchronization and seeking, validated cue timing edits, versioned project save, undo/redo | WAV decoder/bounds fixture passed in GitHub Integration; focused waveform-seek test and strict no-default-feature Clippy passed locally; physical audio-device playback not verified |
 | detect-voice-activity | Adaptive RMS and hysteresis intervals from 16 kHz mono PCM16 WAV, JSON report | Linux silence, synthetic activity and operation-output fixtures tested; energy heuristic only |
 | analyze-transcript | Local language estimate, Unicode linguistic counts and subtitle-time rate estimate, JSON report | Linux English, Russian, short-text, overlap and operation-output fixtures tested; estimates only |
 | replace-text | Exact transcript find and replace within cues | Linux fixture and CLI-tested |
