@@ -8,8 +8,8 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-localwright-core = { git = "https://github.com/ahmad-v/localwright", rev = "6c73d43a419189c276623c3b083f7ffb208c24a6", version = "=0.1.0" }
-localwright-ui = { git = "https://github.com/ahmad-v/localwright", rev = "6c73d43a419189c276623c3b083f7ffb208c24a6", version = "=0.1.0", optional = true }
+localwright-core = { git = "https://github.com/ahmad-v/localwright", rev = "33b9af051960aca693ab92cc3a6dbd63c32baacb", version = "=0.1.0" }
+localwright-ui = { git = "https://github.com/ahmad-v/localwright", rev = "33b9af051960aca693ab92cc3a6dbd63c32baacb", version = "=0.1.0", optional = true }
 iced = { version = "=0.13.1", default-features = false, features = ["tiny-skia", "fira-sans", "async-std", "canvas"], optional = true }
 rfd = { version = "=0.15.4", default-features = false, features = ["async-std", "xdg-portal"], optional = true }
 serde = { version = "=1.0.221", features = ["derive"] }
@@ -21,13 +21,14 @@ whatlang = "=0.18.0"
 whisper-rs = { version = "=0.14.4", optional = true }
 rodio = { version = "=0.20.1", default-features = false, features = ["symphonia-all", "symphonia-aiff"], optional = true }
 symphonia = { version = "=0.5.5", default-features = false, features = ["ogg"], optional = true }
+cpal = { version = "=0.15.3", optional = true }
 
 
 [features]
 default = ["gui", "audio-playback"]
 gui = ["dep:localwright-ui", "dep:iced", "dep:rfd"]
 asr = ["dep:whisper-rs"]
-audio-playback = ["dep:rodio", "dep:symphonia"]
+audio-playback = ["dep:rodio", "dep:symphonia", "dep:cpal"]
 
 [dev-dependencies]
 tempfile = "=3.19.1"

@@ -5,6 +5,8 @@ mod audio_model;
 #[cfg(all(feature = "gui", feature = "audio-playback"))]
 pub mod audio_ui;
 mod cue_edit;
+#[cfg(any(feature = "audio-playback", test))]
+mod recording;
 use localwright_core::*;
 #[cfg(feature = "audio-playback")]
 use rodio::Source;
