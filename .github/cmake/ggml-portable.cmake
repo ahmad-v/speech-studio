@@ -3,6 +3,14 @@
 # native-CPU default, avoiding binaries tied to the CI runner's CPU features.
 set(GGML_NATIVE OFF CACHE BOOL "Build a portable ggml CPU backend" FORCE)
 
+# The LLVM ARM64 Windows clang-cl toolchain advertises NEON half-float vector
+# support, but ggml's current intrinsic code is incompatible with its __fp16
+# pointer types. Disable this optional vector path for the Windows ARM build;
+# scalar kernels remain available and portable.
+if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|aarch64)$")
+    set(GGML_CPU_ARM_ARCH "armv8-a" CACHE STRING "Use baseline ARMv8-A on Windows ARM" FORCE)
+endif()
+
 # whisper-rs-sys' Windows ARM build uses the Ninja generator and its CMake
 # wrapper does not expose generator toolsets. Keep the compiler selection
 # explicit in the toolchain while still letting the CMake crate receive flags
