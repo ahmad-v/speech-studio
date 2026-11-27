@@ -1,0 +1,87 @@
+name: Native validation
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Rust (${{ matrix.runner }})
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'platform-validation')
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            arch: X64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: ARM64
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            arch: X64
+          - runner: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            arch: ARM64
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            arch: ARM64
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Verify native runner architecture
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: test "$RUNNER_ARCH" = "$EXPECTED_ARCH"
+
+      - name: Install Linux GUI prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev
+
+      - name: Install Linux ASR build prerequisites
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: sudo apt-get install -y cmake libclang-dev
+
+      - name: Restore native Cargo cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock') }}-debug-native-gui-no-asr
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-
+
+      - name: Verify native GUI build and tests
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          cargo check --locked --all-targets --target "$BUILD_TARGET"
+          cargo test --locked --target "$BUILD_TARGET"
+          cargo test --locked --no-default-features --target "$BUILD_TARGET"
+
+      - name: Verify optional ASR build and tests on Linux x64
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          cargo check --locked --all-targets --all-features
+          cargo test --locked --all-features
