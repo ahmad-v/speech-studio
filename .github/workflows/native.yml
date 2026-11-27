@@ -73,11 +73,16 @@ jobs:
             & $installer modify --installPath $installation --add Microsoft.VisualStudio.Component.VC.Llvm.Clang --quiet --wait --norestart
             if ($LASTEXITCODE -ne 0) { throw "Could not install the Visual Studio Clang toolset" }
           }
-          "CMAKE_GENERATOR_TOOLSET=ClangCL" >> $env:GITHUB_ENV
+          if (-not (Test-Path $clang)) { throw "The Visual Studio clang-cl compiler was not installed" }
+          @(
+            'CMAKE_GENERATOR=Ninja'
+            "CC_aarch64_pc_windows_msvc=$clang"
+            "CXX_aarch64_pc_windows_msvc=$clang"
+          ) | ForEach-Object { $_ >> $env:GITHUB_ENV }
 
       - name: Disable runner-specific Whisper CPU instructions on Apple Silicon
         if: matrix.target == 'aarch64-apple-darwin'
-        run: echo "WHISPER_NATIVE=OFF" >> "$GITHUB_ENV"
+        run: echo "CMAKE_TOOLCHAIN_FILE=${GITHUB_WORKSPACE}/.github/cmake/ggml-portable.cmake" >> "$GITHUB_ENV"
 
       - name: Restore native Cargo cache
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
