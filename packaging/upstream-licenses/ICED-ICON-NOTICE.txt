@@ -1,0 +1,17 @@
+Iced-Icons.ttf
+Copyright (C) 2020 by original authors @ fontello.com (embedded font metadata).
+
+Iced 0.13's embedded font contains down-dir and ok glyphs. Comparison with
+Fontello's Font Awesome font found matching down-dir outlines and a closely
+matching ok outline with a small point difference.
+
+Font Awesome font glyphs: Copyright (C) 2016 by Dave Gandy (Fontello font
+metadata). The Font Awesome v4 font license is SIL Open Font License 1.1.
+See OFL-1.1.txt. This archive carries the notice for the embedded glyphs.
+
+Iced font source:
+https://github.com/iced-rs/iced/blob/9458967963411b04dd8d41aa06b6349fbeb7a1f6/graphics/fonts/Iced-Icons.ttf
+Fontello comparison source:
+https://github.com/fontello/awesome-uni.font/blob/29d4e3ff028fc850a21b5eaafde0a83f22f59cf1/font/fontawesome.ttf
+Font Awesome font license:
+https://fontawesome.com/v4/license/
