@@ -3,7 +3,7 @@
 use crate::{
     audio_model::{
         active_cue, clamp_seek, decode_project, encode_project, format_time, transport_action,
-        CueHistory, TransportAction,
+        waveform_seek, CueHistory, TransportAction,
     },
     load_playback_clip, parse_stamp, stamp, PlaybackClip, Segment,
 };
@@ -30,8 +30,32 @@ struct Waveform<'a> {
     duration_ms: u64,
 }
 
-impl<Message> canvas::Program<Message> for Waveform<'_> {
+impl canvas::Program<Message> for Waveform<'_> {
     type State = ();
+
+    fn update(
+        &self,
+        _state: &mut (),
+        event: canvas::Event,
+        bounds: Rectangle,
+        cursor: iced::mouse::Cursor,
+    ) -> (iced::event::Status, Option<Message>) {
+        if let canvas::Event::Mouse(iced::mouse::Event::ButtonPressed(iced::mouse::Button::Left)) =
+            event
+        {
+            if let Some(position) = cursor.position_in(bounds) {
+                if let Some(milliseconds) =
+                    waveform_seek(position.x, bounds.width, self.duration_ms)
+                {
+                    return (
+                        iced::event::Status::Captured,
+                        Some(Message::WaveformSeek(milliseconds)),
+                    );
+                }
+            }
+        }
+        (iced::event::Status::Ignored, None)
+    }
 
     fn draw(
         &self,
@@ -319,6 +343,13 @@ impl State {
                     self.send(Command::Seek(clamp_seek(value, self.view.duration_ms)));
                 }
             }
+            Message::WaveformSeek(position) => {
+                self.seek_value_ms = None;
+                self.notice.clear();
+                if self.view.loaded {
+                    self.send(Command::Seek(position.min(self.view.duration_ms)));
+                }
+            }
             Message::Tick => {
                 self.view = lock_snapshot(&self.snapshot).clone();
                 if let Some(active) = active_cue(self.cues.cues(), self.view.position_ms) {
@@ -523,6 +554,7 @@ enum Message {
     Stop,
     Scrub(f32),
     SeekReleased,
+    WaveformSeek(u64),
     OpenTranscript,
     TranscriptPicked(Option<PathBuf>),
     SaveProject,

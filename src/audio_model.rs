@@ -35,6 +35,14 @@ pub(crate) fn clamp_seek(value_ms: f32, duration_ms: u64) -> u64 {
     }
 }
 
+pub(crate) fn waveform_seek(x: f32, width: f32, duration_ms: u64) -> Option<u64> {
+    if !x.is_finite() || !width.is_finite() || width <= 0.0 || duration_ms == 0 {
+        return None;
+    }
+    let position = x.clamp(0.0, width) / width * duration_ms as f32;
+    Some(clamp_seek(position, duration_ms))
+}
+
 pub(crate) fn format_time(milliseconds: u64) -> String {
     let total_seconds = milliseconds / 1000;
     format!(
@@ -225,6 +233,16 @@ mod tests {
         assert_eq!(clamp_seek(9000.0, 5000), 5000);
         assert_eq!(clamp_seek(f32::NAN, 5000), 0);
         assert_eq!(clamp_seek(-1.0, 5000), 0);
+    }
+
+    #[test]
+    fn waveform_navigation_maps_clicks_to_bounded_audio_positions() {
+        assert_eq!(waveform_seek(50.0, 100.0, 8_000), Some(4_000));
+        assert_eq!(waveform_seek(-5.0, 100.0, 8_000), Some(0));
+        assert_eq!(waveform_seek(120.0, 100.0, 8_000), Some(8_000));
+        assert_eq!(waveform_seek(f32::NAN, 100.0, 8_000), None);
+        assert_eq!(waveform_seek(10.0, 0.0, 8_000), None);
+        assert_eq!(waveform_seek(10.0, 100.0, 0), None);
     }
 
     #[test]
