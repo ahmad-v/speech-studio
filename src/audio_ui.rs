@@ -193,7 +193,7 @@ impl State {
                     self.send(Command::Seek(clamp_seek(value, self.view.duration_ms)));
                 }
             }
-            Message::Tick(_) => {
+            Message::Tick => {
                 self.view = lock_snapshot(&self.snapshot).clone();
             }
         }
@@ -274,7 +274,7 @@ impl State {
     }
 
     fn subscription(&self) -> Subscription<Message> {
-        iced::time::every(Duration::from_millis(100)).map(Message::Tick)
+        iced::time::every(Duration::from_millis(100)).map(|_| Message::Tick)
     }
 }
 
@@ -292,7 +292,7 @@ enum Message {
     Stop,
     Scrub(f32),
     SeekReleased,
-    Tick(iced::time::Instant),
+    Tick,
 }
 
 fn update_snapshot(snapshot: &Arc<Mutex<Snapshot>>, update: impl FnOnce(&mut Snapshot)) {
