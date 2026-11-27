@@ -5,7 +5,7 @@ use crate::{
         active_cue, clamp_seek, decode_project, encode_project, format_time, transport_action,
         waveform_seek, CueHistory, TransportAction,
     },
-    load_playback_clip, parse_stamp, stamp, PlaybackClip, Segment,
+    load_playback_clip, open_audio_decoder, parse_stamp, stamp, PlaybackClip, Segment,
 };
 use iced::{
     widget::{button, canvas, column, container, row, scrollable, slider, text, text_input},
@@ -13,9 +13,8 @@ use iced::{
 };
 use localwright_core::Job;
 use localwright_core::{read_bounded, write_bytes};
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
 use std::{
-    io::Cursor,
     path::{Path, PathBuf},
     sync::{mpsc, Arc, Mutex, MutexGuard},
     thread,
@@ -756,8 +755,7 @@ fn start_session(clip: &PlaybackClip, seek_ms: u64) -> Result<Session, String> {
     let (stream, handle): (OutputStream, OutputStreamHandle) =
         OutputStream::try_default().map_err(|error| error.to_string())?;
     let sink = Sink::try_new(&handle).map_err(|error| error.to_string())?;
-    let decoder =
-        Decoder::new(Cursor::new(Arc::clone(&clip.bytes))).map_err(|error| error.to_string())?;
+    let decoder = open_audio_decoder(Arc::clone(&clip.bytes))?;
     if decoder.sample_rate() != clip.sample_rate {
         return Err("WAV sample rate changed while opening the decoder".into());
     }

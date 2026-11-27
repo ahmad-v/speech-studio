@@ -130,7 +130,7 @@ fn validate_playback_audio(bytes: std::sync::Arc<[u8]>, job: &Job) -> Result<(u6
             "Audio must be nonempty and no larger than 128 MiB",
         ));
     }
-    let decoder = rodio::Decoder::new(Cursor::new(bytes))
+    let decoder = open_audio_decoder(bytes)
         .map_err(|error| Error::input(format!("Unsupported or invalid audio: {error}")))?;
     let channels = decoder.channels();
     let sample_rate = decoder.sample_rate();
@@ -187,6 +187,21 @@ fn validate_playback_audio(bytes: std::sync::Arc<[u8]>, job: &Job) -> Result<(u6
     Ok((decoded_frames, sample_rate, waveform))
 }
 
+/// Construct Rodio's Symphonia decoder without allowing a parser panic to unwind through
+/// the application. Some malformed container metadata can currently make Rodio's
+/// initialization path panic on an internal seek error instead of returning `Err`.
+/// Keep that failure local to the untrusted input and report it as a normal decode error.
+#[cfg(feature = "audio-playback")]
+pub(crate) fn open_audio_decoder(
+    bytes: std::sync::Arc<[u8]>,
+) -> std::result::Result<rodio::Decoder<Cursor<std::sync::Arc<[u8]>>>, String> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        rodio::Decoder::new(Cursor::new(bytes))
+    }))
+    .map_err(|_| "decoder rejected malformed container metadata".to_owned())?
+    .map_err(|error| error.to_string())
+}
+
 #[cfg(feature = "audio-playback")]
 pub(crate) fn load_playback_clip(path: &Path, job: &Job) -> Result<PlaybackClip> {
     let bytes: std::sync::Arc<[u8]> = read_bounded(path, 128 * 1024 * 1024)?.into();
@@ -202,7 +217,7 @@ pub(crate) fn load_playback_clip(path: &Path, job: &Job) -> Result<PlaybackClip>
 
 #[cfg(feature = "audio-playback")]
 fn play_wav(input: &Path, job: &Job) -> Result<Outcome> {
-    use rodio::{Decoder, OutputStream, Sink, Source};
+    use rodio::{OutputStream, Sink};
     use std::time::Duration;
 
     let clip = load_playback_clip(input, job)?;
@@ -213,7 +228,7 @@ fn play_wav(input: &Path, job: &Job) -> Result<Outcome> {
         .map_err(|error| Error::engine(format!("Could not open audio output: {error}")))?;
     let sink = Sink::try_new(&stream_handle)
         .map_err(|error| Error::engine(format!("Could not start audio playback: {error}")))?;
-    let decoder = Decoder::new(Cursor::new(bytes))
+    let decoder = open_audio_decoder(bytes)
         .map_err(|error| Error::input(format!("Could not decode audio: {error}")))?;
     if decoder.sample_rate() != clip.sample_rate {
         return Err(Error::input("Audio sample rate changed during decode"));
