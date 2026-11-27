@@ -1,4 +1,5 @@
 #![forbid(unsafe_code)]
+mod analysis;
 mod cue_edit;
 use localwright_core::*;
 #[cfg(feature = "asr")]
@@ -6,6 +7,8 @@ use sha2::{Digest, Sha256};
 use std::{io::Cursor, path::Path};
 pub const OPERATIONS:&[Operation]=&[
  Operation{id:"audio-info",label:"Audio inspection",hint:"Inspect local 16 kHz mono PCM16 WAV; maximum 10 minutes."},
+ Operation{id:"detect-voice-activity",label:"Detect voice activity",hint:"Estimate active intervals from mono 16 kHz PCM16 WAV energy. Results are an energy heuristic, not neural VAD or diarization. Choose a new .json output."},
+ Operation{id:"analyze-transcript",label:"Analyze transcript",hint:"Estimate language and linguistic counts from an SRT draft or file. Language confidence is from a local text classifier; no ASR confidence is invented. Choose a new .json output."},
  Operation{id:"waveform-svg",label:"Export WAV waveform",hint:"Export a peak waveform from 16 kHz mono PCM16 WAV to a new SVG."},
  Operation{id:"prepare-wav",label:"Prepare WAV for speech recognition",hint:"Convert 16, 32, 44.1 or 48 kHz mono/stereo PCM16 WAV to a new 16 kHz mono WAV."},
  Operation{id:"open-vtt",label:"Open WebVTT",hint:"Import plain-text WebVTT cues into the editable SRT draft."},
@@ -737,6 +740,45 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
                 s.len() as f64 / 16000.0
             );
         }
+        "detect-voice-activity" => {
+            if r.output.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                return Err(Error::input("Expected .json output"));
+            }
+            let samples = wav(&r.input, &j)?;
+            let report = analysis::detect_voice_activity(&samples, &j)?;
+            j.check()?;
+            let json = serde_json::to_vec_pretty(&report)?;
+            write_bytes(&r.output, &json)?;
+            out.preview = format!(
+                "Estimated {} activity intervals across {} ms",
+                report.intervals.len(),
+                report.duration_ms
+            );
+            out.warnings.push(report.limitations.into());
+            out.written = Some(r.output);
+        }
+        "analyze-transcript" => {
+            if r.output.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                return Err(Error::input("Expected .json output"));
+            }
+            let source = if r.draft.trim().is_empty() {
+                String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?
+            } else {
+                r.draft
+            };
+            let segments = parse(&source)?;
+            let report = analysis::analyze_transcript(&segments, &j)?;
+            j.check()?;
+            let json = serde_json::to_vec_pretty(&report)?;
+            write_bytes(&r.output, &json)?;
+            out.preview = format!(
+                "Analyzed {} words in {} transcript cues",
+                report.words, report.cue_count
+            );
+            out.warnings
+                .extend(report.notes.iter().map(|note| (*note).into()));
+            out.written = Some(r.output);
+        }
         "open-vtt" => {
             let source =
                 String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?;
@@ -931,6 +973,91 @@ mod tests {
         let wrong_version = dir.path().join("unsupported.json");
         std::fs::write(&wrong_version, r#"{"schema_version":2,"segments":[]}"#).unwrap();
         assert!(open_transcript(&wrong_version, &Job::new()).is_err());
+    }
+
+    #[test]
+    fn transcript_analysis_operation_reports_language_and_truthful_estimates() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("analysis.json");
+        let draft = "1\n00:00:00,000 --> 00:00:02,000\nThis is a small English transcript. It includes useful words!\n\n2\n00:00:01,500 --> 00:00:03,000\nUseful words appear again.\n";
+        let outcome = handle(
+            Request {
+                operation: "analyze-transcript".into(),
+                output: output.clone(),
+                draft: draft.into(),
+                ..Request::default()
+            },
+            Job::new(),
+        )
+        .unwrap();
+        assert_eq!(outcome.written, Some(output.clone()));
+        let json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&output).unwrap()).unwrap();
+        assert_eq!(json["schema_version"], 1);
+        assert_eq!(json["words"], 14);
+        assert_eq!(json["cue_count"], 2);
+        assert_eq!(json["cue_covered_ms"], 3000);
+        assert_eq!(json["language"]["iso_639_3"], "eng");
+        assert!(json["asr_confidence"].is_null());
+        assert!(handle(
+            Request {
+                operation: "analyze-transcript".into(),
+                output,
+                draft: draft.into(),
+                ..Request::default()
+            },
+            Job::new(),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn voice_activity_operation_writes_bounded_energy_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("fixture.wav");
+        let output = dir.path().join("activity.json");
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 16_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&input, spec).unwrap();
+        for _ in 0..8_000 {
+            writer.write_sample(0i16).unwrap();
+        }
+        for index in 0..16_000 {
+            let sample = (0.2
+                * (std::f64::consts::TAU * 220.0 * index as f64 / 16_000.0).sin()
+                * f64::from(i16::MAX)) as i16;
+            writer.write_sample(sample).unwrap();
+        }
+        for _ in 0..8_000 {
+            writer.write_sample(0i16).unwrap();
+        }
+        writer.finalize().unwrap();
+
+        let outcome = handle(
+            Request {
+                operation: "detect-voice-activity".into(),
+                input,
+                output: output.clone(),
+                ..Request::default()
+            },
+            Job::new(),
+        )
+        .unwrap();
+        assert_eq!(outcome.written, Some(output.clone()));
+        let json: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&output).unwrap()).unwrap();
+        assert_eq!(json["method"], "adaptive-rms-energy-hysteresis");
+        assert_eq!(json["duration_ms"], 2000);
+        assert_eq!(json["intervals"].as_array().unwrap().len(), 1);
+        assert!((json["speech_active_ms"].as_u64().unwrap() as i64 - 1000).abs() <= 20);
+        assert!(json["limitations"]
+            .as_str()
+            .unwrap()
+            .contains("not neural VAD"));
     }
 
     #[test]

@@ -14,6 +14,8 @@ Nothing is verified on a native target. The machine-readable registry is a devel
 | export-lrc | Export cue start times with centisecond precision; joins multiline cue text | Linux fixture-tested; format is duration-lossy |
 | waveform-svg | Export a peak SVG from mono 16 kHz PCM16 WAV | Linux fixture and CLI-tested |
 | audio-info | 16 kHz mono signed PCM16 WAV | implemented-unverified |
+| detect-voice-activity | WAV energy intervals in JSON; adaptive RMS and hysteresis only | Linux silence and synthetic interval fixtures passed; speech/noise corpus not tested |
+| analyze-transcript | SRT/draft to JSON language and text statistics, timing-derived estimated rate | Linux English/Russian, short text, Unicode words and overlap fixtures passed; values remain estimates |
 | open-srt | UTF-8 SRT subset; editable draft | implemented-unverified |
 | export-srt | Validated SRT output | implemented-unverified |
 | open-json / export-json | Versioned UTF-8 transcript exchange with millisecond timings | Linux fixture and CLI-tested |

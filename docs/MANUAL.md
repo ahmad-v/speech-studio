@@ -6,6 +6,8 @@ Development source only. Launch the GUI after compiling. Choose an operation, en
 - `open-lrc`: Imports UTF-8 LRC metadata, signed `[offset:milliseconds]`, timestamps such as `[01:23.45]`, and repeated timestamps on one lyric line. Cue ends are inferred from the next timestamp; the final line receives a 3-second duration. Review timings before using the draft.
 - `prepare-wav`: Converts mono or stereo PCM16 WAV at 16, 32, or 48 kHz to a new 16 kHz mono WAV. Downsampling averages groups of input frames.
 - `audio-info`: 16 kHz mono signed PCM16 WAV.
+- `detect-voice-activity`: Reads a 16 kHz mono PCM16 WAV and writes a new JSON report of energy-active intervals. This short-time RMS detector is an estimate. Tones, music and noise may count as activity; quiet or unvoiced speech may be missed. It is not a neural speech detector and does not identify speakers.
+- `analyze-transcript`: Reads the SRT input or current draft and writes a new JSON report with an estimated language, classifier confidence, Unicode word/character/grapheme counts, sentences, non-empty text lines, unique-word ratio, cue-covered duration and an estimated words-per-cue-minute rate. The language confidence belongs to the local text classifier, not speech recognition. No ASR confidence is reported because the current decoder does not provide one. Rate estimates use subtitle cue timing, not acoustic speech duration.
 - `open-srt`: UTF-8 SRT subset; editable draft.
 - `replace-text`: Enter JSON such as `{"find":"old","replace":"new"}`. The operation uses the current draft, or a supplied SRT if the draft is empty, and returns an edited draft. Matches are case-sensitive and confined to individual cues. Timings are preserved. Save explicitly to export the changes.
 - `export-srt`: Validated SRT output.
@@ -16,7 +18,7 @@ Development source only. Launch the GUI after compiling. Choose an operation, en
 - `open-json`: Restore a version 1 transcript into an editable SRT draft. Unsupported versions, unknown fields, invalid timing and text outside the SRT draft subset are rejected.
 - `export-txt`: Plain transcript text.
 
-Limitations: No redistributed ASR model or reference speech. Optional native inference source only, not enabled in default build. Private Tiny English pack or explicit local model path with expected SHA-256 required; user hash is integrity, not authenticity. Cancellation cannot interrupt inference itself. No playback, resampling, waveform, language accuracy, WER, translation, diarization, TTS or model pack. SRT supports strict basic timecodes and sequential indices; overlapping segments allowed.
+Limitations: No redistributed ASR model or reference speech. Optional native inference source only, not enabled in default build. Private Tiny English pack or explicit local model path with expected SHA-256 required; user hash is integrity, not authenticity. Cancellation cannot interrupt inference itself. Playback, language accuracy, WER, translation, diarization, TTS and model packaging remain unverified. The bundled energy VAD is not neural and cannot distinguish speech from other sustained sounds. Transcript language identification and linguistic counts are estimates, not ground truth. SRT supports strict basic timecodes and sequential indices; overlapping segments allowed.
 
 No output overwrite is allowed. No accounts, ads, telemetry or runtime downloads are intended. Do not use this unverified snapshot with valuable or hostile input. Citation and donations are voluntary.
 

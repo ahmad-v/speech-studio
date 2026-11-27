@@ -96,6 +96,20 @@
       "fixture_status": "not run"
     },
     {
+      "operation": "detect-voice-activity",
+      "description": "Adaptive RMS energy activity intervals from 16 kHz mono PCM16 WAV to a versioned JSON report",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux silence, synthetic activity, duration bound and operation-output fixtures passed; existing 11-second JFK WAV CLI smoke returned six bounded intervals; not validated against labeled speech/noise data"
+    },
+    {
+      "operation": "analyze-transcript",
+      "description": "Local language estimate and Unicode text statistics from SRT or editable draft to versioned JSON",
+      "status": "implemented-unverified",
+      "targets": ["x86_64-unknown-linux-gnu"],
+      "fixture_status": "Linux English, Russian, short text, overlapping cue, Unicode word and operation-output fixtures passed; estimates only"
+    },
+    {
       "operation": "replace-text",
       "description": "Exact find and replace inside transcript cues with original timing",
       "status": "implemented-unverified",
