@@ -8,49 +8,63 @@
       "operation": "scale-timing",
       "description": "Scale cue times from zero",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux integration fixture passed"
     },
     {
       "operation": "trim-cues",
       "description": "Crop cues to a time interval",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux integration fixture passed"
     },
     {
       "operation": "split-cue",
       "description": "Split a cue at an exact millisecond",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux integration fixture passed"
     },
     {
       "operation": "merge-cues",
       "description": "Join consecutive cue text and timing",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux integration fixture passed"
     },
     {
       "operation": "delete-cue",
       "description": "Remove and renumber a selected cue",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux integration fixture passed"
     },
     {
       "operation": "waveform-svg",
       "description": "Export a peak SVG from mono 16 kHz PCM16 WAV",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux fixture and CLI checks passed"
     },
     {
       "operation": "shift-timing",
       "description": "Shift all subtitle cues by signed milliseconds",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux fixture and CLI checks passed"
     },
     {
@@ -64,7 +78,9 @@
       "operation": "open-lrc",
       "description": "Import timestamped LRC lyric lines into an editable SRT draft",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux metadata, global offset, repeated timestamps, duration inference and invalid-input fixtures passed"
     },
     {
@@ -85,7 +101,9 @@
       "operation": "export-lrc",
       "description": "Export cue starts and text as duration-lossy LRC lyrics",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux centisecond rendering and multiline flattening fixtures passed"
     },
     {
@@ -99,21 +117,27 @@
       "operation": "detect-voice-activity",
       "description": "Adaptive RMS energy activity intervals from 16 kHz mono PCM16 WAV to a versioned JSON report",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux silence, synthetic activity, duration bound and operation-output fixtures passed; existing 11-second JFK WAV CLI smoke returned six bounded intervals; not validated against labeled speech/noise data"
     },
     {
       "operation": "analyze-transcript",
       "description": "Local language estimate and Unicode text statistics from SRT or editable draft to versioned JSON",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux English, Russian, short text, overlapping cue, Unicode word and operation-output fixtures passed; estimates only"
     },
     {
       "operation": "replace-text",
       "description": "Exact find and replace inside transcript cues with original timing",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux draft timing and CLI replacement checks passed"
     },
     {
@@ -134,14 +158,18 @@
       "operation": "open-json",
       "description": "Version 1 text and millisecond transcript exchange",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux transcript round trip and independent JSON checks passed"
     },
     {
       "operation": "export-json",
       "description": "Version 1 text and millisecond transcript exchange",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux transcript round trip and independent JSON checks passed"
     },
     {
@@ -155,8 +183,100 @@
       "operation": "transcribe",
       "description": "Optional CPU Whisper adapter with private Tiny English pack discovery",
       "status": "implemented-unverified",
-      "targets": ["x86_64-unknown-linux-gnu"],
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
       "fixture_status": "Linux x86_64 offline app-relative English pack smoke passed"
+    },
+    {
+      "operation": "replace-cue-text",
+      "description": "Replace one cue text while preserving timestamps",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "insert-cue",
+      "description": "Insert a validated subtitle cue at a requested position",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "set-cue-timing",
+      "description": "Set one cue interval and validate order",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "shift-cue-range",
+      "description": "Shift an inclusive cue range with timestamp bounds checks",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "remove-duplicate-cues",
+      "description": "Remove exact duplicate cue records, preserving the first",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "normalize-cue-whitespace",
+      "description": "Collapse whitespace per line while keeping line boundaries",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "wrap-cue-text",
+      "description": "Wrap cue text at word boundaries by Unicode grapheme width",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "join-cue-lines",
+      "description": "Join cue lines and collapse whitespace",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "swap-cue-text",
+      "description": "Swap two cue texts without changing timestamps",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "replace-text-range",
+      "description": "Replace literal text in an inclusive cue range",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
     }
   ]
 }

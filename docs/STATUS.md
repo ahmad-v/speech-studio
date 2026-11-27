@@ -9,6 +9,16 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 | split-cue | Split a cue at an exact millisecond | Linux fixture-tested |
 | merge-cues | Join consecutive cue text and timing | Linux fixture-tested |
 | delete-cue | Remove and renumber a selected cue | Linux fixture-tested |
+| replace-cue-text | Replace one cue's text while retaining timing | Linux cue-edit fixture-tested; hosted matrix pending |
+| insert-cue | Insert a cue at a requested index with validated timing | Linux cue-edit fixture-tested; hosted matrix pending |
+| set-cue-timing | Replace one cue's interval with order validation | Linux cue-edit fixture-tested; hosted matrix pending |
+| shift-cue-range | Shift an inclusive cue range with bounds checks | Linux cue-edit fixture-tested; hosted matrix pending |
+| remove-duplicate-cues | Remove exact duplicate records, retaining first occurrence | Linux cue-edit fixture-tested; hosted matrix pending |
+| normalize-cue-whitespace | Collapse whitespace per line and preserve line breaks | Linux cue-edit fixture-tested; hosted matrix pending |
+| wrap-cue-text | Wrap at word boundaries using grapheme width | Linux cue-edit fixture-tested; hosted matrix pending |
+| join-cue-lines | Join cue lines and collapse whitespace | Linux cue-edit fixture-tested; hosted matrix pending |
+| swap-cue-text | Exchange cue text while retaining timing | Linux cue-edit fixture-tested; hosted matrix pending |
+| replace-text-range | Replace literal text in an inclusive cue range | Linux cue-edit fixture-tested; hosted matrix pending |
 | shift-timing | Shift all subtitle cues by signed milliseconds | Linux fixture and CLI-tested |
 | waveform-svg | Export a peak SVG from mono 16 kHz PCM16 WAV | Linux fixture and CLI-tested |
 | open-vtt | Import plain-text WebVTT cues into an SRT draft | Linux fixture-tested |

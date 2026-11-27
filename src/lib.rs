@@ -22,6 +22,16 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"split-cue",label:"Split a subtitle cue",hint:"Enter JSON with cue, at_ms, first and second. Cue numbers start at 1."},
  Operation{id:"merge-cues",label:"Merge a range of cues",hint:"Enter first,last cue numbers. Combines their text and timing span."},
  Operation{id:"delete-cue",label:"Delete a subtitle cue",hint:"Enter the 1-based cue number to remove from the draft."},
+ Operation{id:"replace-cue-text",label:"Replace cue text",hint:r#"Enter JSON {"cue":1,"text":"New cue text"}. Timing is unchanged."#},
+ Operation{id:"insert-cue",label:"Insert subtitle cue",hint:r#"Enter JSON with index, start_ms, end_ms and text. Index is the 1-based insertion position; cue times must retain order."#},
+ Operation{id:"set-cue-timing",label:"Set cue timing",hint:r#"Enter JSON {"cue":1,"start_ms":1000,"end_ms":2500}. Times are milliseconds; end must follow start."#},
+ Operation{id:"shift-cue-range",label:"Shift a cue range",hint:r#"Enter JSON {"first":2,"last":4,"offset_ms":-100}. Shifts the selected 1-based range and rejects invalid timestamps or order."#},
+ Operation{id:"remove-duplicate-cues",label:"Remove duplicate cues",hint:"Removes exact duplicate records with identical start, end, and text, preserving the first occurrence."},
+ Operation{id:"normalize-cue-whitespace",label:"Normalize cue whitespace",hint:"Collapses whitespace within each line and trims line edges while preserving intentional line breaks."},
+ Operation{id:"wrap-cue-text",label:"Wrap cue text",hint:r#"Enter JSON {"max_graphemes":42}. Wraps at word boundaries; a single overlong word is kept intact."#},
+ Operation{id:"join-cue-lines",label:"Join cue lines",hint:"Joins each cue's lines with spaces and collapses whitespace."},
+ Operation{id:"swap-cue-text",label:"Swap cue text",hint:r#"Enter JSON {"first":1,"second":2}. Swaps text only; each cue keeps its timing."#},
+ Operation{id:"replace-text-range",label:"Replace text in cue range",hint:r#"Enter JSON {"first":1,"last":3,"find":"old","replace":"new"}. Case-sensitive literal replacement within selected cues."#},
  Operation{id:"shift-timing",label:"Shift subtitle timing",hint:"Enter a signed offset in milliseconds. Uses the current draft or SRT input and returns a new draft."},
  Operation{id:"export-json",label:"Save transcript JSON",hint:"Export an SRT file or the edited draft with millisecond timestamps. Choose a new .json file."},
  Operation{id:"export-txt",label:"Save text",hint:"Extract text from editable SRT draft or input SRT. New .txt output."},
@@ -803,8 +813,23 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
             out.draft = Some(draft);
             out.warnings.push("LRC has no cue end times; each cue ends at the next timestamp and the final cue is assigned a 3-second duration.".into());
         }
-        "replace-text" | "shift-timing" | "scale-timing" | "trim-cues" | "split-cue"
-        | "merge-cues" | "delete-cue" => {
+        "replace-text"
+        | "shift-timing"
+        | "scale-timing"
+        | "trim-cues"
+        | "split-cue"
+        | "merge-cues"
+        | "delete-cue"
+        | "replace-cue-text"
+        | "insert-cue"
+        | "set-cue-timing"
+        | "shift-cue-range"
+        | "remove-duplicate-cues"
+        | "normalize-cue-whitespace"
+        | "wrap-cue-text"
+        | "join-cue-lines"
+        | "swap-cue-text"
+        | "replace-text-range" => {
             let source = if r.draft.trim().is_empty() {
                 String::from_utf8(read_bounded(&r.input, 2 * 1024 * 1024)?).map_err(err)?
             } else {
