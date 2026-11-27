@@ -107,6 +107,15 @@
       "fixture_status": "Linux centisecond rendering and multiline flattening fixtures passed"
     },
     {
+      "operation": "play-wav",
+      "description": "Native Iced workspace for bounded mono/stereo PCM16 WAV: transport, seek, canvas waveform/playhead, synchronized SRT/JSON cue list, cue seeking, validated timing edits, undo/redo and version 1 transcript project save",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux Integration passed WAV bounds/decoder fixture; headless cue/history/project and transport tests are added but not run locally; physical audio output and native device backends remain unverified"
+    },
+    {
       "operation": "audio-info",
       "description": "16 kHz mono signed PCM16 WAV",
       "status": "implemented-unverified",
@@ -278,15 +287,95 @@
       ],
       "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
     },
-    {"operation":"uppercase-cue-range","description":"Uppercase text in an inclusive cue range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
-    {"operation":"lowercase-cue-range","description":"Lowercase text in an inclusive cue range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
-    {"operation":"title-case-cue-range","description":"Title-case words in an inclusive cue range while preserving line breaks","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
-    {"operation":"sentence-case-cue-range","description":"Apply sentence and line-start capitalization in an inclusive cue range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
-    {"operation":"trim-cue-range","description":"Trim leading and trailing whitespace in an inclusive cue range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
-    {"operation":"prefix-cue-range","description":"Add a prefix to each cue in an inclusive range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
-    {"operation":"suffix-cue-range","description":"Add a suffix to each cue in an inclusive range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
-    {"operation":"reverse-cue-lines-range","description":"Reverse line order in each cue in an inclusive range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
-    {"operation":"sort-cue-lines-range","description":"Sort lines in each cue in an inclusive range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
-    {"operation":"deduplicate-cue-lines-range","description":"Keep the first occurrence of each exact line in cues in an inclusive range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"}
+    {
+      "operation": "uppercase-cue-range",
+      "description": "Uppercase text in an inclusive cue range",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "lowercase-cue-range",
+      "description": "Lowercase text in an inclusive cue range",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "title-case-cue-range",
+      "description": "Title-case words in an inclusive cue range while preserving line breaks",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "sentence-case-cue-range",
+      "description": "Apply sentence and line-start capitalization in an inclusive cue range",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "trim-cue-range",
+      "description": "Trim leading and trailing whitespace in an inclusive cue range",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "prefix-cue-range",
+      "description": "Add a prefix to each cue in an inclusive range",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "suffix-cue-range",
+      "description": "Add a suffix to each cue in an inclusive range",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "reverse-cue-lines-range",
+      "description": "Reverse line order in each cue in an inclusive range",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "sort-cue-lines-range",
+      "description": "Sort lines in each cue in an inclusive range",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "deduplicate-cue-lines-range",
+      "description": "Keep the first occurrence of each exact line in cues in an inclusive range",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    }
   ]
 }

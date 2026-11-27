@@ -14,83 +14,81 @@ defaults:
     shell: bash
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   rust:
-    name: Rust (${{ matrix.runner }})
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-            arch: X64
-          - runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-            arch: ARM64
-          - runner: windows-2025
-            target: x86_64-pc-windows-msvc
-            arch: X64
-          - runner: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            arch: ARM64
-          - runner: macos-15
-            target: aarch64-apple-darwin
-            arch: ARM64
+    # Keep this stable: it is the ordinary branch-protection check context.
+    name: Rust (ubuntu-24.04)
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          fetch-depth: 0
           persist-credentials: false
-      - name: Verify runner architecture
+
+      - name: Identify documentation-only changes
+        id: scope
         env:
-          EXPECTED_ARCH: ${{ matrix.arch }}
-        run: test "$RUNNER_ARCH" = "$EXPECTED_ARCH"
-      - name: Install Linux build prerequisites
-        if: runner.os == 'Linux'
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == "workflow_dispatch" || -z "$BASE_SHA" || "$BASE_SHA" =~ ^0+$ ]]; then
+            echo 'code_changed=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          mapfile -t changed < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          code_changed=false
+          for path in "${changed[@]}"; do
+            case "$path" in
+              *.md|docs/*.md|docs/*/*.md|docs/capabilities.json|.github/workflows/*.yml|.github/workflows/*.yaml) ;;
+              *) code_changed=true; break ;;
+            esac
+          done
+          echo "code_changed=$code_changed" >> "$GITHUB_OUTPUT"
+          printf 'Code checks required: %s\n' "$code_changed"
+
+      - name: Check whitespace and capability registry
+        run: |
+          if [[ "$BASE_SHA" != "" && ! "$BASE_SHA" =~ ^0+$ ]]; then
+            git diff --check "$BASE_SHA" "$HEAD_SHA"
+          else
+            git diff --check
+          fi
+          python3 -m json.tool docs/capabilities.json >/dev/null
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+
+      - name: Validate Cargo manifest
+        run: cargo metadata --locked --no-deps --format-version 1 >/dev/null
+
+      - name: Install Linux GUI build prerequisites
+        if: steps.scope.outputs.code_changed == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev
-      - name: Verify locked build and tests
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libasound2-dev
+
+      - name: Restore Cargo registry and target cache
+        if: steps.scope.outputs.code_changed == 'true'
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock') }}-debug-default-gui-no-asr
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Verify locked Linux build and tests
+        if: steps.scope.outputs.code_changed == 'true'
         run: |
-          cargo --version
+          rustup show active-toolchain
           cargo fmt --all -- --check
           cargo check --locked --all-targets
-          cargo tree --locked
           cargo test --locked
           cargo clippy --locked --all-targets -- -D warnings
-      - name: Verify headless mode
-        run: |
-          cargo test --locked --no-default-features
-          cargo run --locked --no-default-features -- --cli --help
-      - name: Check optional ASR build
-        if: runner.os == 'Linux' && matrix.arch == 'X64'
-        run: |
-          sudo apt-get install -y cmake libclang-dev
-          cargo check --locked --no-default-features --features asr
-      - name: Build and smoke-test a portable preview
-        env:
-          BUILD_TARGET: ${{ matrix.target }}
-          CARGO_PROFILE_RELEASE_STRIP: symbols
-        run: |
-          cargo build --locked --release --target "$BUILD_TARGET"
-          executable="${GITHUB_REPOSITORY##*/}"
-          python_cmd=python3
-          if [[ "$RUNNER_OS" == Windows ]]; then
-            executable="$executable.exe"
-            python_cmd=python
-          fi
-          "$python_cmd" packaging/portable.py \
-            --target "$BUILD_TARGET" \
-            --binary "target/$BUILD_TARGET/release/$executable" \
-            --output dist/preview
-      - name: Upload portable preview
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: preview-${{ matrix.target }}
-          path: dist/preview/
-          if-no-files-found: error
-          retention-days: 14
-          compression-level: 0

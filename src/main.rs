@@ -11,6 +11,19 @@ fn main() {
         }
         return;
     }
+    if args.first().map(String::as_str) == Some("--audio") {
+        #[cfg(all(feature = "gui", feature = "audio-playback"))]
+        if let Err(error) = speech_studio::audio_ui::run() {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        #[cfg(not(all(feature = "gui", feature = "audio-playback")))]
+        {
+            eprintln!("The audio workspace requires GUI and audio-playback features");
+            std::process::exit(2);
+        }
+        return;
+    }
     #[cfg(feature = "gui")]
     if let Err(e) = localwright_ui::run_with_saved_appearance(
         "Speech Studio",

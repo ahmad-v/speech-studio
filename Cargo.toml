@@ -8,21 +8,25 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-localwright-core = { git = "https://github.com/ahmad-v/localwright", rev = "3091d10892df79b9959f49a073db34cf81c9a15e", version = "=0.1.0" }
-localwright-ui = { git = "https://github.com/ahmad-v/localwright", rev = "3091d10892df79b9959f49a073db34cf81c9a15e", version = "=0.1.0", optional = true }
-serde = { version = "=1.0.219", features = ["derive"] }
+localwright-core = { git = "https://github.com/ahmad-v/localwright", rev = "3174dd6f74f37267c12ec781157a248e94d760fc", version = "=0.1.0" }
+localwright-ui = { git = "https://github.com/ahmad-v/localwright", rev = "3174dd6f74f37267c12ec781157a248e94d760fc", version = "=0.1.0", optional = true }
+iced = { version = "=0.13.1", default-features = false, features = ["tiny-skia", "fira-sans", "async-std", "canvas"], optional = true }
+rfd = { version = "=0.15.4", default-features = false, features = ["async-std", "xdg-portal"], optional = true }
+serde = { version = "=1.0.221", features = ["derive"] }
 serde_json = "=1.0.140"
 hound = "=3.5.1"
-sha2 = "=0.10.8"
+sha2 = "=0.10.9"
 unicode-segmentation = "=1.13.3"
 whatlang = "=0.18.0"
 whisper-rs = { version = "=0.14.4", optional = true }
+rodio = { version = "=0.20.1", default-features = false, features = ["wav"], optional = true }
 
 
 [features]
-default = ["gui"]
-gui = ["dep:localwright-ui"]
+default = ["gui", "audio-playback"]
+gui = ["dep:localwright-ui", "dep:iced", "dep:rfd"]
 asr = ["dep:whisper-rs"]
+audio-playback = ["dep:rodio"]
 
 [dev-dependencies]
 tempfile = "=3.19.1"

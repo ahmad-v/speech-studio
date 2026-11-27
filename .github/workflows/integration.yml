@@ -1,0 +1,73 @@
+name: Integration
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: Linux GUI, headless, and ASR
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'integration')
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Install build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libasound2-dev xvfb cmake libclang-dev
+
+      - name: Restore integration Cargo cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock') }}-debug-integration-all-features
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Verify default GUI integration
+        run: |
+          cargo check --locked --all-targets
+          cargo test --locked
+          cargo build --locked --bin speech-studio
+
+      - name: Smoke launch the native GUI under Xvfb
+        run: |
+          set +e
+          timeout --signal=TERM --kill-after=10s 20s xvfb-run -a target/debug/speech-studio --audio
+          status=$?
+          set -e
+          case "$status" in
+            124|143) echo "GUI remained running until the bounded smoke timeout, as expected." ;;
+            0) echo "GUI exited before the smoke timeout." >&2; exit 1 ;;
+            *) echo "GUI startup failed with exit status $status." >&2; exit "$status" ;;
+          esac
+
+      - name: Verify headless CLI configuration
+        run: |
+          cargo test --locked --no-default-features
+          cargo run --locked --no-default-features -- --cli --help
+
+      - name: Verify optional offline ASR build and tests
+        run: |
+          cargo check --locked --all-targets --all-features
+          cargo test --locked --all-features
+          cargo test --locked --no-default-features --features asr

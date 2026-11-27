@@ -1,6 +1,6 @@
 # Format and operation compatibility
 
-Nothing is verified on a native target. The machine-readable registry is a development inventory, not an advertised capability list.
+The machine-readable registry is a development inventory, not an advertised capability list. Playback device behavior remains unverified on physical hardware.
 
 | Operation | Route | Evidence status |
 |---|---|---|
@@ -14,6 +14,7 @@ Nothing is verified on a native target. The machine-readable registry is a devel
 | export-lrc | Export cue start times with centisecond precision; joins multiline cue text | Linux fixture-tested; format is duration-lossy |
 | waveform-svg | Export a peak SVG from mono 16 kHz PCM16 WAV | Linux fixture and CLI-tested |
 | audio-info | 16 kHz mono signed PCM16 WAV | implemented-unverified |
+| play-wav | Native Iced audio workspace with canvas waveform/playhead, WAV transport/seeking, synchronized SRT/JSON cue list, cue seeking, validated timing edits, undo/redo and version 1 project save; WAV limit 10 minutes/128 MiB | Linux decoder/bounds fixture passed; new headless cue/history/project tests added but not run locally; physical audio output not verified |
 | detect-voice-activity | WAV energy intervals in JSON; adaptive RMS and hysteresis only | Linux silence and synthetic interval fixtures passed; speech/noise corpus not tested |
 | analyze-transcript | SRT/draft to JSON language and text statistics, timing-derived estimated rate | Linux English/Russian, short text, Unicode words and overlap fixtures passed; values remain estimates |
 | open-srt | UTF-8 SRT subset; editable draft | implemented-unverified |

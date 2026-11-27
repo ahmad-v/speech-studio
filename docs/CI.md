@@ -1,0 +1,12 @@
+# CI workflow roles
+
+The ordinary **Check** workflow keeps the existing `Rust (ubuntu-24.04)` status context and runs on pull requests, pushes to `main`, and manual dispatch. It uses the pinned Rust toolchain, checks formatting, locked compilation, tests and strict Clippy on Linux x64, and validates the Cargo manifest and capability registry. Documentation-only Markdown, capability-registry, and workflow-YAML changes skip Rust compilation and tests, but still validate whitespace, the manifest and registry. Workflow YAML is parsed by GitHub before a workflow can run.
+
+The heavier workflows are milestone checks:
+
+- **Integration** runs when a pull request receives the `integration` label or is manually dispatched. It exercises default GUI and headless tests, smoke-launches the dedicated audio workspace under Xvfb, and compiles/tests the optional Whisper backend. No model is stored in the repository, so this job does not claim model-backed speech accuracy.
+- **Native validation** runs when a pull request receives `platform-validation` or is manually dispatched. It checks Linux x64/ARM64, Windows x64/ARM64 and macOS Apple Silicon. Optional ASR compilation is checked on Linux x64 only; cross-target ASR support has not been established.
+- **Distribution preview** is manually dispatched. It builds and smoke-tests unsigned baseline portable bundles and uploads them as short-lived workflow artifacts. These previews do not include the Whisper model and are not installable release packages.
+- **Dependency and license inventory** audits the locked graph weekly and on dependency-file changes. Manual dispatch also creates a CycloneDX SBOM for all Rust features and target dependencies and checks that external packages declare license metadata. The check is inventory evidence, not a determination of license compatibility, native-library licensing or model redistribution rights.
+
+All workflows use read-only repository permissions, immutable action revisions, per-PR cancellation for replaceable runs, and Cargo caches scoped by operating system, architecture, toolchain/lockfile and build configuration. The five-target installer matrix and release artifacts remain separate acceptance work; these workflows do not declare release readiness.

@@ -1,0 +1,117 @@
+name: Dependency and license inventory
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '35 4 * * 0'
+  push:
+    branches: [main]
+    paths:
+      - Cargo.toml
+      - Cargo.lock
+      - rust-toolchain.toml
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: RustSec audit
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Restore RustSec tool cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin/cargo-audit
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: security-audit-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-0.23.0
+
+      - name: Install pinned RustSec auditor
+        run: cargo install --locked cargo-audit --version 0.23.0
+
+      - name: Audit the complete locked dependency graph
+        run: cargo audit
+
+  inventory:
+    name: License metadata and CycloneDX SBOM
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Restore SBOM tool cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            ~/.cargo/bin/cargo-cyclonedx
+            ~/.cargo/.crates.toml
+            ~/.cargo/.crates2.json
+          key: security-sbom-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock') }}-cyclonedx-0.5.10
+
+      - name: Install pinned SBOM generator
+        run: cargo install --locked cargo-cyclonedx --version 0.5.10
+
+      - name: Check license metadata completeness
+        run: |
+          cargo metadata --locked --format-version 1 --all-features > "$RUNNER_TEMP/cargo-metadata.json"
+          python3 - "$RUNNER_TEMP/cargo-metadata.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          metadata = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          unresolved = []
+          for package in metadata["packages"]:
+              if not package["source"] or package["license"]:
+                  continue
+              license_file = package["license_file"]
+              if license_file:
+                  path = pathlib.Path(license_file)
+                  if not path.is_absolute():
+                      path = pathlib.Path(package["manifest_path"]).parent / path
+                  if path.is_file():
+                      continue
+              unresolved.append(f'{package["name"]} {package["version"]}')
+          if unresolved:
+              raise SystemExit("Missing Cargo license metadata or license file: " + ", ".join(unresolved))
+          count = sum(bool(package["source"]) for package in metadata["packages"])
+          print(f"Cargo license metadata is present for {count} external packages.")
+          print("This checks inventory completeness, not legal compatibility or third-party asset approval.")
+          PY
+
+      - name: Generate CycloneDX inventory for all features and targets
+        run: cargo cyclonedx --format json --all-features --target all --spec-version 1.6 --override-filename speech-studio-sbom
+
+      - name: Validate the generated SBOM JSON
+        run: python3 -m json.tool speech-studio-sbom.json >/dev/null
+
+      - name: Upload dependency inventory
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: speech-studio-security-inventory-${{ github.sha }}
+          path: speech-studio-sbom.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 6
