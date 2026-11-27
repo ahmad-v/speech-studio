@@ -1,19 +1,27 @@
-# Private Whisper Tiny English model pack
+# Optional offline Whisper model packs
 
-Speech Studio's optional `asr` feature supports an application-relative English model pack. Use the pinned GGML model and license listed in [the source manifest](../packaging/whisper-model/manifest.json). The pack assembler accepts a previously obtained local file and checks its exact length and SHA-256 before writing a new ZIP.
+Speech Studio's optional `asr` build supports two app-relative model packs: the existing English-only Tiny model and a compact multilingual Tiny model. Model binaries are not committed, fetched by this repository, or downloaded by the application. The packager only reads a local file that you obtained separately, checks its exact byte length and SHA-256, then writes a new ZIP without replacing an existing output.
+
+## Assemble a pack offline
+
+For English, retain the existing route:
 
 ```sh
 python3 packaging/whisper_model_pack.py /path/to/ggml-tiny.en.bin whisper-tiny-en.zip
 ```
 
-Extract the pack beside the Speech Studio executable in an installation directory that other users cannot modify. The expected path is `engines/whisper-tiny-en/ggml-tiny.en.bin`. In an ASR-enabled build, select Transcribe and leave its parameter blank to use this English model. The application verifies the bytes against its built-in pin before loading. To use a separately supplied model, enter its absolute path and a trusted SHA-256 separated by `|`.
+For multilingual Tiny, select its separate pinned manifest:
 
-When preparing a combined portable bundle, build with the default features plus `asr`, then pass `--whisper-model /path/to/ggml-tiny.en.bin` to `packaging/portable.py`. The packager requires an executable that advertises the transcription route and verifies the model after extraction. The dependency inventory includes the ASR feature graph and the vendored whisper.cpp license.
+```sh
+python3 packaging/whisper_model_pack.py /path/to/ggml-tiny.bin whisper-tiny-multilingual.zip --model-id whisper-tiny-multilingual
+```
 
-The pack contains model data, provenance and the model's MIT license. The CPU inference engine is provided by the ASR-enabled application build. The baseline installer still omits ASR. The application does not fetch models during use.
+The multilingual artifact is pinned to Hugging Face repository revision `5359861c739e955e79d9a303bcbc70fb988958b1`. Its 77,691,713 bytes were downloaded and hashed locally; SHA-256 `be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21` matches that revision's Hugging Face LFS metadata. The manifest also records the model-source revision, OpenAI MIT license source and license SHA-256. No model binary is stored in Git.
 
-Both explicit and app-relative model lookup have Linux x86_64 offline smoke evidence. The app-relative test extracted the generated pack alongside a locked ASR-enabled CLI build, transcribed a short reference WAV into a two-cue draft without passing a model path, and exported that draft via the SRT route. Tracing recorded no socket or connect calls while socket creation was blocked. A truncated model copy failed the SHA-256 check. This evidence applies to a staged local binary. Hardware, clean-device, ASR-enabled installer and broad model quality checks remain pending.
+Extract the selected pack next to the Speech Studio executable in an installation directory not writable by untrusted users. The files are placed under `engines/<model-id>/`; the application verifies the embedded byte count and SHA-256 before loading. In an ASR-enabled build, leave Transcribe's parameter blank to use English Tiny or enter `multilingual` to select the app-relative multilingual pack. For another model, enter its absolute file path and trusted SHA-256 separated by `|`.
 
-The Linux x64 ASR-enabled portable archive passed checksum verification and a second smoke test from the extracted payload. Its pinned application-relative model transcribed the reference WAV and exported the reviewed draft as two SRT cues. Socket creation was blocked and the trace showed no socket or connect calls.
+The multilingual model uses Whisper language auto-detection; English Tiny retains its fixed English mode. Whisper's upstream model card identifies Tiny as 39 million parameters and reports about 1 GiB required VRAM in its GPU benchmark. That is not a CPU RAM measurement. Speech Studio disables GPU inference and configures two CPU threads; its runtime RSS and speed have not been measured, so no minimum CPU RAM is claimed. The multilingual model file requires 77,691,713 bytes (about 74.1 MiB) of installed storage, plus the small manifest and license. During assembly, keep both the source file and new ZIP available; the tool uses temporary storage for the archive.
 
-The portable packager requires ASR support and the pinned model to be supplied together. A default build may be packaged without the model when its CLI has no transcription route.
+The model is offered under MIT as declared by OpenAI Whisper and the pinned conversion/model repository. Its exact license text is bundled with the pack. The multilingual model supports language identification upstream, but Speech Studio has not independently validated its language coverage or recognition quality. WER and CER have not been measured; no independently licensed multilingual reference corpus was used for this increment. Review the experimental transcript before export. Cancellation remains cooperative before and after native inference, not during it.
+
+When preparing a portable preview, build with the `asr` feature and pass both the model file and, for multilingual, `--whisper-model-id whisper-tiny-multilingual` to `packaging/portable.py`. The default application package remains model-free. The preview packager checks that the binary advertises transcription and verifies the extracted model against its pinned manifest. Hardware, per-language quality, WER/CER, clean-device installation and physical audio behavior remain unverified.

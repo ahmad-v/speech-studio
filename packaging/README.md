@@ -18,7 +18,7 @@ Windows MSI and EXE must use the same product identity and payload, separately v
 
 ## Optional speech model pack
 
-The [private Whisper model pack](../docs/WHISPER_MODEL_PACK.md) can be assembled offline from the pinned local model and provisioned beside an ASR-enabled binary.
+The [private Whisper model packs](../docs/WHISPER_MODEL_PACK.md) cover English Tiny and multilingual Tiny. Assemble either offline from its pinned local model file and provision it beside an ASR-enabled binary. Neither model binary is committed or downloaded by the application.
 
 ## Portable CI previews
 
