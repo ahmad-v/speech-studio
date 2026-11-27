@@ -123,8 +123,12 @@ fn validate_playback_audio(bytes: std::sync::Arc<[u8]>, job: &Job) -> Result<(u6
     if frames == 0 || frames > 600 * u64::from(sample_rate) {
         return Err(Error::input("Audio duration exceeds the 10-minute limit"));
     }
-    let max_samples = frames
-        .checked_mul(u64::from(channels))
+    // Decoder duration metadata can be rounded or underreported by a small
+    // amount (notably for short WAV files). Enforce the advertised hard limit
+    // against samples actually decoded instead of trusting the estimate.
+    let max_samples = 600u64
+        .checked_mul(u64::from(sample_rate))
+        .and_then(|frames| frames.checked_mul(u64::from(channels)))
         .ok_or_else(|| Error::input("Audio sample count overflow"))?;
     const WAVEFORM_BINS: usize = 240;
     let mut waveform = vec![0.0f32; WAVEFORM_BINS];
@@ -133,8 +137,8 @@ fn validate_playback_audio(bytes: std::sync::Arc<[u8]>, job: &Job) -> Result<(u6
         if count % 4096 == 0 {
             job.check()?;
         }
-        if count >= max_samples.saturating_add(u64::from(channels) * 2) {
-            return Err(Error::input("Decoded audio exceeds its declared duration"));
+        if count >= max_samples {
+            return Err(Error::input("Decoded audio exceeds the 10-minute limit"));
         }
         let frame = count / u64::from(channels);
         let bin = ((frame * WAVEFORM_BINS as u64) / u64::from(frames))
