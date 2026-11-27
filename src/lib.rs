@@ -98,6 +98,32 @@ pub(crate) struct PlaybackClip {
 }
 
 #[cfg(feature = "audio-playback")]
+fn rebin_waveform(waveform: &mut [f32], old_frames: u64, new_frames: u64) {
+    if waveform.is_empty() || old_frames == 0 || new_frames == 0 || old_frames == new_frames {
+        return;
+    }
+    let bins = waveform.len() as u128;
+    let old_frames = u128::from(old_frames);
+    let new_frames = u128::from(new_frames);
+    let mut rebinned = vec![0.0f32; waveform.len()];
+    for (old_bin, peak) in waveform.iter().copied().enumerate() {
+        let old_start = (old_bin as u128 * old_frames) / bins;
+        let old_end = ((old_bin as u128 + 1) * old_frames).div_ceil(bins);
+        if peak == 0.0 {
+            continue;
+        }
+        for (new_bin, new_peak) in rebinned.iter_mut().enumerate() {
+            let new_start = (new_bin as u128 * new_frames) / bins;
+            let new_end = ((new_bin as u128 + 1) * new_frames).div_ceil(bins);
+            if old_start < new_end && new_start < old_end {
+                *new_peak = new_peak.max(peak);
+            }
+        }
+    }
+    waveform.copy_from_slice(&rebinned);
+}
+
+#[cfg(feature = "audio-playback")]
 fn validate_playback_audio(bytes: std::sync::Arc<[u8]>, job: &Job) -> Result<(u64, u32, Vec<f32>)> {
     if bytes.is_empty() || bytes.len() > 128 * 1024 * 1024 {
         return Err(Error::input(
@@ -108,27 +134,26 @@ fn validate_playback_audio(bytes: std::sync::Arc<[u8]>, job: &Job) -> Result<(u6
         .map_err(|error| Error::input(format!("Unsupported or invalid audio: {error}")))?;
     let channels = decoder.channels();
     let sample_rate = decoder.sample_rate();
-    let duration = decoder
-        .total_duration()
-        .ok_or_else(|| Error::input("Audio decoder did not provide a bounded duration"))?;
+    let declared_duration = decoder.total_duration();
     if !(1..=8).contains(&channels) || !(8_000..=192_000).contains(&sample_rate) {
         return Err(Error::input("Audio must contain 1–8 channels at 8–192 kHz"));
     }
-    if duration.is_zero() || duration > Duration::from_secs(600) {
+    if declared_duration
+        .is_some_and(|duration| duration.is_zero() || duration > Duration::from_secs(600))
+    {
         return Err(Error::input(
             "Audio must be nonempty and no longer than 10 minutes",
         ));
     }
-    let frames = (duration.as_secs_f64() * f64::from(sample_rate)).ceil() as u64;
-    if frames == 0 || frames > 600 * u64::from(sample_rate) {
-        return Err(Error::input("Audio duration exceeds the 10-minute limit"));
-    }
-    // Decoder duration metadata can be rounded or underreported by a small
-    // amount (notably for short WAV files). Enforce the advertised hard limit
-    // against samples actually decoded instead of trusting the estimate.
-    let max_samples = 600u64
+    let maximum_frames = 600u64
         .checked_mul(u64::from(sample_rate))
-        .and_then(|frames| frames.checked_mul(u64::from(channels)))
+        .ok_or_else(|| Error::input("Audio sample count overflow"))?;
+    let mut estimated_frames = declared_duration.map_or(u64::from(sample_rate), |duration| {
+        (duration.as_secs_f64() * f64::from(sample_rate)).ceil() as u64
+    });
+    estimated_frames = estimated_frames.clamp(1, maximum_frames);
+    let max_samples = maximum_frames
+        .checked_mul(u64::from(channels))
         .ok_or_else(|| Error::input("Audio sample count overflow"))?;
     const WAVEFORM_BINS: usize = 240;
     let mut waveform = vec![0.0f32; WAVEFORM_BINS];
@@ -141,7 +166,15 @@ fn validate_playback_audio(bytes: std::sync::Arc<[u8]>, job: &Job) -> Result<(u6
             return Err(Error::input("Decoded audio exceeds the 10-minute limit"));
         }
         let frame = count / u64::from(channels);
-        let bin = ((frame * WAVEFORM_BINS as u64) / u64::from(frames))
+        if frame >= estimated_frames {
+            let new_estimate = estimated_frames
+                .saturating_mul(2)
+                .max(frame.saturating_add(1))
+                .min(maximum_frames);
+            rebin_waveform(&mut waveform, estimated_frames, new_estimate);
+            estimated_frames = new_estimate;
+        }
+        let bin = ((frame * WAVEFORM_BINS as u64) / estimated_frames)
             .min((WAVEFORM_BINS - 1) as u64) as usize;
         waveform[bin] = waveform[bin].max(f32::from(sample).abs() / 32768.0);
         count += 1;
@@ -149,7 +182,9 @@ fn validate_playback_audio(bytes: std::sync::Arc<[u8]>, job: &Job) -> Result<(u6
     if count == 0 || count % u64::from(channels) != 0 {
         return Err(Error::input("Decoded audio has incomplete sample frames"));
     }
-    Ok((count / u64::from(channels), sample_rate, waveform))
+    let decoded_frames = count / u64::from(channels);
+    rebin_waveform(&mut waveform, estimated_frames, decoded_frames);
+    Ok((decoded_frames, sample_rate, waveform))
 }
 
 #[cfg(feature = "audio-playback")]
@@ -1073,6 +1108,18 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "audio-playback")]
+    #[test]
+    fn waveform_rebinning_preserves_peaks_when_duration_estimates_change() {
+        let mut waveform = vec![0.0; 4];
+        waveform[0] = 0.25;
+        waveform[2] = 0.75;
+        rebin_waveform(&mut waveform, 4, 8);
+        assert_eq!(waveform, [0.25, 0.75, 0.0, 0.0]);
+        rebin_waveform(&mut waveform, 8, 4);
+        assert_eq!(waveform, [0.25, 0.25, 0.75, 0.75]);
+    }
+
     #[test]
     fn shifts_overlapping_cues_without_changing_text_or_duration() {
         let input =
