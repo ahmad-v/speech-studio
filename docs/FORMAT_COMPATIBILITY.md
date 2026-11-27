@@ -10,6 +10,8 @@ Nothing is verified on a native target. The machine-readable registry is a devel
 | merge-cues | Join consecutive cue text and timing | Linux fixture-tested |
 | delete-cue | Remove and renumber a selected cue | Linux fixture-tested |
 | shift-timing | Shift all subtitle cues by signed milliseconds | Linux fixture and CLI-tested |
+| open-lrc | Import LRC metadata, offset and single/multiple timestamp lines into SRT draft | Linux offset, multitag, inferred-duration and invalid-input fixtures tested |
+| export-lrc | Export cue start times with centisecond precision; joins multiline cue text | Linux fixture-tested; format is duration-lossy |
 | waveform-svg | Export a peak SVG from mono 16 kHz PCM16 WAV | Linux fixture and CLI-tested |
 | audio-info | 16 kHz mono signed PCM16 WAV | implemented-unverified |
 | open-srt | UTF-8 SRT subset; editable draft | implemented-unverified |

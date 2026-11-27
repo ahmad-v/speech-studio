@@ -3,12 +3,14 @@
 Development source only. Launch the GUI after compiling. Choose an operation, enter local input path and a new output path where needed, set the parameter as described under the operation selector, then Run. Status and errors are shown below. Cancel requests cooperative cancellation. The draft editor accepts transcript or plain text. Choose a theme to change workbench colors and control borders. UI scale adjusts the controls from 80% to 300% and remembers your appearance choices when you reopen the app. Paths are manually typed in this increment; native dialogs and full accessibility remain pending.
 
 - `open-vtt`: Imports simple UTF-8 cues. Cue settings, regions, styles, and timed markup are outside this route. Cue identifiers and NOTE blocks are omitted.
+- `open-lrc`: Imports UTF-8 LRC metadata, signed `[offset:milliseconds]`, timestamps such as `[01:23.45]`, and repeated timestamps on one lyric line. Cue ends are inferred from the next timestamp; the final line receives a 3-second duration. Review timings before using the draft.
 - `prepare-wav`: Converts mono or stereo PCM16 WAV at 16, 32, or 48 kHz to a new 16 kHz mono WAV. Downsampling averages groups of input frames.
 - `audio-info`: 16 kHz mono signed PCM16 WAV.
 - `open-srt`: UTF-8 SRT subset; editable draft.
 - `replace-text`: Enter JSON such as `{"find":"old","replace":"new"}`. The operation uses the current draft, or a supplied SRT if the draft is empty, and returns an edited draft. Matches are case-sensitive and confined to individual cues. Timings are preserved. Save explicitly to export the changes.
 - `export-srt`: Validated SRT output.
 - `export-vtt` writes WebVTT from SRT input or an edited draft. Cue text is exported as literal text.
+- `export-lrc` writes timestamped lyric lines with centisecond start times. LRC does not encode cue end times, so timing duration is lost; multiline cue text is joined with spaces.
 - `transcribe`: For an ASR-enabled build, leave the parameter blank to use the [private English model pack](WHISPER_MODEL_PACK.md).
 - `export-json`: Save transcript text and timings from the SRT path or draft. The schema is `{"schema_version":1,"segments":[{"start_ms":0,"end_ms":1000,"text":"example"}]}`.
 - `open-json`: Restore a version 1 transcript into an editable SRT draft. Unsupported versions, unknown fields, invalid timing and text outside the SRT draft subset are rejected.
