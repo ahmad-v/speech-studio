@@ -179,7 +179,10 @@ fn finish_recording_writer(
 
 #[cfg(feature = "audio-playback")]
 mod capture {
-    use super::Pcm16WavRecorder;
+    use super::{
+        add_partial_reason, append_capture_blocks, finish_recording_writer, FinalizedRecording,
+        Pcm16WavRecorder,
+    };
     use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
     use std::{
         path::Path,
