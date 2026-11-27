@@ -8,8 +8,8 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [dependencies]
-localwright-core = { git = "https://github.com/ahmad-v/localwright", rev = "eccef00f6011207e7e67dd86bb4741cdcca1bf0a", version = "=0.1.0" }
-localwright-ui = { git = "https://github.com/ahmad-v/localwright", rev = "eccef00f6011207e7e67dd86bb4741cdcca1bf0a", version = "=0.1.0", optional = true }
+localwright-core = { git = "https://github.com/ahmad-v/localwright", rev = "e57e8395c566ad0b289196e771cbe43f4bd6c463", version = "=0.1.0" }
+localwright-ui = { git = "https://github.com/ahmad-v/localwright", rev = "e57e8395c566ad0b289196e771cbe43f4bd6c463", version = "=0.1.0", optional = true }
 iced = { version = "=0.13.1", default-features = false, features = ["tiny-skia", "fira-sans", "async-std", "canvas"], optional = true }
 rfd = { version = "=0.15.4", default-features = false, features = ["async-std", "xdg-portal"], optional = true }
 serde = { version = "=1.0.221", features = ["derive"] }
