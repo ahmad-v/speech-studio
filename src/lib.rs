@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 mod analysis;
-#[cfg(feature = "audio-playback")]
+#[cfg(any(feature = "audio-playback", test))]
 mod audio_model;
 #[cfg(all(feature = "gui", feature = "audio-playback"))]
 pub mod audio_ui;

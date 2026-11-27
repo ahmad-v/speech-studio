@@ -145,10 +145,12 @@ impl CueHistory {
         &self.current
     }
 
+    #[cfg(all(feature = "gui", feature = "audio-playback"))]
     pub(crate) fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
 
+    #[cfg(all(feature = "gui", feature = "audio-playback"))]
     pub(crate) fn can_redo(&self) -> bool {
         !self.redo.is_empty()
     }
