@@ -6,13 +6,17 @@ mod audio_model;
 pub mod audio_ui;
 mod cue_edit;
 use localwright_core::*;
+#[cfg(feature = "audio-playback")]
+use rodio::Source;
 #[cfg(feature = "asr")]
 use sha2::{Digest, Sha256};
+#[cfg(feature = "audio-playback")]
+use std::time::Duration;
 use std::{io::Cursor, path::Path};
 pub const OPERATIONS:&[Operation]=&[
  Operation{id:"audio-info",label:"Audio inspection",hint:"Inspect local 16 kHz mono PCM16 WAV; maximum 10 minutes."},
  #[cfg(feature="audio-playback")]
- Operation{id:"play-wav",label:"Play WAV audio",hint:"Play a local mono or stereo PCM16 WAV (16, 32, 44.1 or 48 kHz, up to 10 minutes). Leave output and parameter blank. Cancel stops playback."},
+ Operation{id:"play-wav",label:"Play local audio",hint:"Open and play local WAV, FLAC, MP3, OGG, AAC/M4A or AIFF audio (up to 8 channels, 8–192 kHz, 10 minutes, 128 MiB input and 256 MiB decoded memory). Leave output and parameter blank. Cancel stops playback. Format support depends on the bundled native decoders."},
  Operation{id:"detect-voice-activity",label:"Detect voice activity",hint:"Estimate active intervals from mono 16 kHz PCM16 WAV energy. Results are an energy heuristic, not neural VAD or diarization. Choose a new .json output."},
  Operation{id:"analyze-transcript",label:"Analyze transcript",hint:"Estimate language and linguistic counts from an SRT draft or file. Language confidence is from a local text classifier; no ASR confidence is invented. Choose a new .json output."},
  Operation{id:"waveform-svg",label:"Export WAV waveform",hint:"Export a peak waveform from 16 kHz mono PCM16 WAV to a new SVG."},
@@ -94,57 +98,329 @@ pub(crate) struct PlaybackClip {
 }
 
 #[cfg(feature = "audio-playback")]
-fn validate_playback_wav(bytes: &[u8], job: &Job) -> Result<(u64, u32, Vec<f32>)> {
+fn rebin_waveform(waveform: &mut [f32], old_frames: u64, new_frames: u64) {
+    if waveform.is_empty() || old_frames == 0 || new_frames == 0 || old_frames == new_frames {
+        return;
+    }
+    let bins = waveform.len() as u128;
+    let old_frames = u128::from(old_frames);
+    let new_frames = u128::from(new_frames);
+    let mut rebinned = vec![0.0f32; waveform.len()];
+    for (old_bin, peak) in waveform.iter().copied().enumerate() {
+        let old_start = (old_bin as u128 * old_frames) / bins;
+        let old_end = ((old_bin as u128 + 1) * old_frames).div_ceil(bins);
+        if peak == 0.0 {
+            continue;
+        }
+        for (new_bin, new_peak) in rebinned.iter_mut().enumerate() {
+            let new_start = (new_bin as u128 * new_frames) / bins;
+            let new_end = ((new_bin as u128 + 1) * new_frames).div_ceil(bins);
+            if old_start < new_end && new_start < old_end {
+                *new_peak = new_peak.max(peak);
+            }
+        }
+    }
+    waveform.copy_from_slice(&rebinned);
+}
+
+#[cfg(feature = "audio-playback")]
+fn validate_playback_audio(bytes: std::sync::Arc<[u8]>, job: &Job) -> Result<(u64, u32, Vec<f32>)> {
     if bytes.is_empty() || bytes.len() > 128 * 1024 * 1024 {
         return Err(Error::input(
-            "WAV must be nonempty and no larger than 128 MiB",
+            "Audio must be nonempty and no larger than 128 MiB",
         ));
     }
-    let mut reader = hound::WavReader::new(Cursor::new(bytes)).map_err(err)?;
-    let spec = reader.spec();
-    if !matches!(spec.channels, 1 | 2)
-        || !matches!(spec.sample_rate, 16_000 | 32_000 | 44_100 | 48_000)
-        || spec.bits_per_sample != 16
-        || spec.sample_format != hound::SampleFormat::Int
+    let decoder = open_audio_decoder(bytes, job)?;
+    let channels = decoder.channels();
+    let sample_rate = decoder.sample_rate();
+    let declared_duration = decoder.total_duration();
+    if !(1..=8).contains(&channels) || !(8_000..=192_000).contains(&sample_rate) {
+        return Err(Error::input("Audio must contain 1–8 channels at 8–192 kHz"));
+    }
+    if declared_duration
+        .is_some_and(|duration| duration.is_zero() || duration > Duration::from_secs(600))
     {
-        return Err(Error::input(
-            "Expected mono or stereo PCM16 WAV at 16, 32, 44.1 or 48 kHz",
-        ));
-    }
-    let frames = reader.duration();
-    if frames == 0 || frames > 600 * spec.sample_rate {
         return Err(Error::input(
             "Audio must be nonempty and no longer than 10 minutes",
         ));
     }
-    let expected_samples = u64::from(frames) * u64::from(spec.channels);
+    let maximum_frames = 600u64
+        .checked_mul(u64::from(sample_rate))
+        .ok_or_else(|| Error::input("Audio sample count overflow"))?;
+    let mut estimated_frames = declared_duration.map_or(u64::from(sample_rate), |duration| {
+        (duration.as_secs_f64() * f64::from(sample_rate)).ceil() as u64
+    });
+    estimated_frames = estimated_frames.clamp(1, maximum_frames);
+    let max_samples = maximum_frames
+        .checked_mul(u64::from(channels))
+        .ok_or_else(|| Error::input("Audio sample count overflow"))?;
     const WAVEFORM_BINS: usize = 240;
     let mut waveform = vec![0.0f32; WAVEFORM_BINS];
     let mut count = 0u64;
-    for sample in reader.samples::<i16>() {
+    for sample in decoder {
         if count % 4096 == 0 {
             job.check()?;
         }
-        let value = sample.map_err(err)?;
-        let frame = count / u64::from(spec.channels);
-        let bin = ((frame * WAVEFORM_BINS as u64) / u64::from(frames))
+        if count >= max_samples {
+            return Err(Error::input("Decoded audio exceeds the 10-minute limit"));
+        }
+        let frame = count / u64::from(channels);
+        if frame >= estimated_frames {
+            let new_estimate = estimated_frames
+                .saturating_mul(2)
+                .max(frame.saturating_add(1))
+                .min(maximum_frames);
+            rebin_waveform(&mut waveform, estimated_frames, new_estimate);
+            estimated_frames = new_estimate;
+        }
+        let bin = ((frame * WAVEFORM_BINS as u64) / estimated_frames)
             .min((WAVEFORM_BINS - 1) as u64) as usize;
-        waveform[bin] = waveform[bin].max(f32::from(value).abs() / 32768.0);
+        waveform[bin] = waveform[bin].max(f32::from(sample).abs() / 32768.0);
         count += 1;
     }
-    if count != expected_samples {
-        return Err(Error::input("WAV sample data is incomplete"));
+    if count == 0 || count % u64::from(channels) != 0 {
+        return Err(Error::input("Decoded audio has incomplete sample frames"));
     }
-    Ok((u64::from(frames), spec.sample_rate, waveform))
+    let decoded_frames = count / u64::from(channels);
+    rebin_waveform(&mut waveform, estimated_frames, decoded_frames);
+    Ok((decoded_frames, sample_rate, waveform))
+}
+
+/// Construct Rodio's Symphonia decoder without allowing a parser panic to unwind through
+/// the application. Some malformed container metadata can currently make Rodio's
+/// initialization path panic on an internal seek error instead of returning `Err`.
+/// Keep that failure local to the untrusted input and report it as a normal decode error.
+#[cfg(feature = "audio-playback")]
+pub(crate) fn open_audio_decoder(bytes: std::sync::Arc<[u8]>, job: &Job) -> Result<AudioDecoder> {
+    // Rodio's ReadSeekSource reports `byte_len() == None`. Symphonia's ISO BMFF
+    // demuxer requires a known length for a seekable MP4 and returns SeekError;
+    // Rodio 0.20.1 treats that initialization error as unreachable. Decode MP4
+    // containers directly through Symphonia and buffer within a strict limit.
+    if bytes.get(4..8) == Some(b"ftyp") {
+        return decode_mp4_audio(bytes, job).map(AudioDecoder::Buffered);
+    }
+    let decoder = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        rodio::Decoder::new(Cursor::new(bytes))
+    }))
+    .map_err(|_| Error::input("Audio decoder rejected malformed container metadata"))?
+    .map_err(|error| Error::input(format!("Unsupported or invalid audio: {error}")))?;
+    Ok(AudioDecoder::Rodio(decoder))
+}
+
+#[cfg(feature = "audio-playback")]
+enum AudioDecoder {
+    Rodio(rodio::Decoder<Cursor<std::sync::Arc<[u8]>>>),
+    Buffered(rodio::buffer::SamplesBuffer<i16>),
+}
+
+#[cfg(feature = "audio-playback")]
+impl Iterator for AudioDecoder {
+    type Item = i16;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Rodio(decoder) => decoder.next(),
+            Self::Buffered(decoder) => decoder.next(),
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self {
+            Self::Rodio(decoder) => decoder.size_hint(),
+            Self::Buffered(decoder) => decoder.size_hint(),
+        }
+    }
+}
+
+#[cfg(feature = "audio-playback")]
+impl rodio::Source for AudioDecoder {
+    fn current_frame_len(&self) -> Option<usize> {
+        match self {
+            Self::Rodio(decoder) => decoder.current_frame_len(),
+            Self::Buffered(decoder) => decoder.current_frame_len(),
+        }
+    }
+
+    fn channels(&self) -> u16 {
+        match self {
+            Self::Rodio(decoder) => decoder.channels(),
+            Self::Buffered(decoder) => decoder.channels(),
+        }
+    }
+
+    fn sample_rate(&self) -> u32 {
+        match self {
+            Self::Rodio(decoder) => decoder.sample_rate(),
+            Self::Buffered(decoder) => decoder.sample_rate(),
+        }
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        match self {
+            Self::Rodio(decoder) => decoder.total_duration(),
+            Self::Buffered(decoder) => decoder.total_duration(),
+        }
+    }
+
+    fn try_seek(
+        &mut self,
+        position: Duration,
+    ) -> std::result::Result<(), rodio::source::SeekError> {
+        match self {
+            Self::Rodio(decoder) => decoder.try_seek(position),
+            Self::Buffered(decoder) => decoder.try_seek(position),
+        }
+    }
+}
+
+#[cfg(feature = "audio-playback")]
+fn decode_mp4_audio(
+    bytes: std::sync::Arc<[u8]>,
+    job: &Job,
+) -> Result<rodio::buffer::SamplesBuffer<i16>> {
+    use symphonia::core::{
+        audio::SampleBuffer, codecs::DecoderOptions, errors::Error as SymphoniaError,
+        formats::FormatOptions, io::MediaSourceStream, meta::MetadataOptions, probe::Hint,
+    };
+    let media = MediaSourceStream::new(
+        Box::new(Cursor::new(bytes)) as Box<dyn symphonia::core::io::MediaSource>,
+        Default::default(),
+    );
+    let mut probed = symphonia::default::get_probe()
+        .format(
+            &Hint::new(),
+            media,
+            &FormatOptions {
+                enable_gapless: true,
+                ..Default::default()
+            },
+            &MetadataOptions::default(),
+        )
+        .map_err(|error| Error::input(format!("Invalid MP4 audio: {error}")))?;
+    let (track_id, params) = probed
+        .format
+        .tracks()
+        .iter()
+        .find(|track| {
+            track.codec_params.codec != symphonia::core::codecs::CODEC_TYPE_NULL
+                && track.codec_params.sample_rate.is_some()
+        })
+        .map(|track| (track.id, track.codec_params.clone()))
+        .ok_or_else(|| Error::input("MP4 contains no supported audio stream"))?;
+    let declared_sample_rate = params
+        .sample_rate
+        .ok_or_else(|| Error::input("MP4 audio sample rate is unavailable"))?;
+    if !(8_000..=192_000).contains(&declared_sample_rate) {
+        return Err(Error::input("Audio must contain 1–8 channels at 8–192 kHz"));
+    }
+    const MAX_DECODED_BYTES: usize = 256 * 1024 * 1024;
+    let buffer_limit = MAX_DECODED_BYTES / std::mem::size_of::<i16>();
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&params, &DecoderOptions::default())
+        .map_err(|error| Error::input(format!("MP4 audio decoder unavailable: {error}")))?;
+    let mut samples = Vec::new();
+    let mut consecutive_errors = 0usize;
+    let mut channels = None;
+    let mut sample_rate = None;
+    loop {
+        job.check()?;
+        let packet = match probed.format.next_packet() {
+            Ok(packet) => packet,
+            Err(SymphoniaError::IoError(error))
+                if error.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                break
+            }
+            Err(SymphoniaError::IoError(error)) => {
+                return Err(Error::input(format!("Could not read MP4 audio: {error}")))
+            }
+            Err(error) => return Err(Error::input(format!("Could not read MP4 packet: {error}"))),
+        };
+        if packet.track_id() != track_id {
+            continue;
+        }
+        match decoder.decode(&packet) {
+            Ok(decoded) => {
+                consecutive_errors = 0;
+                let decoded_channels = u16::try_from(decoded.spec().channels.count())
+                    .map_err(|_| Error::input("MP4 audio channel count overflow"))?;
+                let decoded_rate = decoded.spec().rate;
+                if !(1..=8).contains(&decoded_channels)
+                    || !(8_000..=192_000).contains(&decoded_rate)
+                    || decoded_rate != declared_sample_rate
+                    || channels.is_some_and(|channels| channels != decoded_channels)
+                    || sample_rate.is_some_and(|rate| rate != decoded_rate)
+                {
+                    return Err(Error::input(
+                        "MP4 audio changed channel count or sample rate while decoding",
+                    ));
+                }
+                channels = Some(decoded_channels);
+                sample_rate = Some(decoded_rate);
+                let samples_capacity = decoded
+                    .capacity()
+                    .checked_mul(usize::from(decoded_channels))
+                    .ok_or_else(|| Error::input("MP4 decoded sample count overflow"))?;
+                if samples_capacity > buffer_limit {
+                    return Err(Error::input("MP4 packet exceeds the 256 MiB decode limit"));
+                }
+                let mut buffer =
+                    SampleBuffer::<i16>::new(decoded.capacity() as u64, *decoded.spec());
+                buffer.copy_interleaved_ref(decoded);
+                let sample_limit = 600u64
+                    .checked_mul(u64::from(decoded_rate))
+                    .and_then(|frames| frames.checked_mul(u64::from(decoded_channels)))
+                    .ok_or_else(|| Error::input("MP4 sample limit overflow"))?;
+                let declared_sample_limit = params
+                    .n_frames
+                    .map(|frames| frames.saturating_mul(u64::from(decoded_channels)))
+                    .filter(|frames| *frames > 0 && *frames <= sample_limit);
+                if samples.len().saturating_add(buffer.samples().len()) > sample_limit as usize
+                    || samples.len().saturating_add(buffer.samples().len()) > buffer_limit
+                {
+                    return Err(Error::input(
+                        "MP4 audio exceeds the 10-minute or 256 MiB playback limit",
+                    ));
+                }
+                let remaining_declared = declared_sample_limit
+                    .map(|limit| limit.saturating_sub(samples.len() as u64) as usize)
+                    .unwrap_or(usize::MAX);
+                let keep_samples = buffer.samples().len().min(remaining_declared);
+                samples.extend_from_slice(&buffer.samples()[..keep_samples]);
+                if declared_sample_limit.is_some_and(|limit| samples.len() as u64 >= limit) {
+                    break;
+                }
+            }
+            Err(SymphoniaError::DecodeError(_)) => {
+                consecutive_errors += 1;
+                if consecutive_errors > 3 {
+                    return Err(Error::input("MP4 audio has too many decode errors"));
+                }
+            }
+            Err(error) => return Err(Error::input(format!("Could not decode MP4 audio: {error}"))),
+        }
+    }
+    let channels = channels.ok_or_else(|| Error::input("MP4 audio stream is empty"))?;
+    let sample_rate = sample_rate.ok_or_else(|| Error::input("MP4 audio stream is empty"))?;
+    if samples.is_empty() || samples.len() % usize::from(channels) != 0 {
+        return Err(Error::input(
+            "MP4 audio is empty or has incomplete sample frames",
+        ));
+    }
+    Ok(rodio::buffer::SamplesBuffer::new(
+        channels,
+        sample_rate,
+        samples,
+    ))
 }
 
 #[cfg(feature = "audio-playback")]
 pub(crate) fn load_playback_clip(path: &Path, job: &Job) -> Result<PlaybackClip> {
-    let bytes = read_bounded(path, 128 * 1024 * 1024)?;
-    let (frames, sample_rate, waveform) = validate_playback_wav(&bytes, job)?;
+    let bytes: std::sync::Arc<[u8]> = read_bounded(path, 128 * 1024 * 1024)?.into();
+    let (frames, sample_rate, waveform) = validate_playback_audio(bytes.clone(), job)?;
     let waveform = audio_model::bound_waveform(&waveform, 240);
     Ok(PlaybackClip {
-        bytes: bytes.into(),
+        bytes,
         sample_rate,
         duration_ms: frames.saturating_mul(1000) / u64::from(sample_rate),
         waveform,
@@ -153,7 +429,7 @@ pub(crate) fn load_playback_clip(path: &Path, job: &Job) -> Result<PlaybackClip>
 
 #[cfg(feature = "audio-playback")]
 fn play_wav(input: &Path, job: &Job) -> Result<Outcome> {
-    use rodio::{Decoder, OutputStream, Sink, Source};
+    use rodio::{OutputStream, Sink};
     use std::time::Duration;
 
     let clip = load_playback_clip(input, job)?;
@@ -164,10 +440,9 @@ fn play_wav(input: &Path, job: &Job) -> Result<Outcome> {
         .map_err(|error| Error::engine(format!("Could not open audio output: {error}")))?;
     let sink = Sink::try_new(&stream_handle)
         .map_err(|error| Error::engine(format!("Could not start audio playback: {error}")))?;
-    let decoder = Decoder::new(Cursor::new(bytes))
-        .map_err(|error| Error::input(format!("Could not decode WAV audio: {error}")))?;
+    let decoder = open_audio_decoder(bytes, job)?;
     if decoder.sample_rate() != clip.sample_rate {
-        return Err(Error::input("WAV sample rate changed during decode"));
+        return Err(Error::input("Audio sample rate changed during decode"));
     }
     sink.append(decoder);
     while !sink.empty() {
@@ -180,7 +455,7 @@ fn play_wav(input: &Path, job: &Job) -> Result<Outcome> {
     drop(stream);
     Ok(Outcome {
         preview: format!(
-            "Played {:.3} seconds of PCM16 WAV audio",
+            "Played {:.3} seconds of local audio",
             duration_ms as f64 / 1000.0,
         ),
         ..Outcome::default()
@@ -1059,6 +1334,18 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "audio-playback")]
+    #[test]
+    fn waveform_rebinning_preserves_peaks_when_duration_estimates_change() {
+        let mut waveform = vec![0.0; 4];
+        waveform[0] = 0.25;
+        waveform[2] = 0.75;
+        rebin_waveform(&mut waveform, 4, 8);
+        assert_eq!(waveform, [0.25, 0.75, 0.0, 0.0]);
+        rebin_waveform(&mut waveform, 8, 4);
+        assert_eq!(waveform, [0.25, 0.25, 0.75, 0.75]);
+    }
+
     #[test]
     fn shifts_overlapping_cues_without_changing_text_or_duration() {
         let input =
@@ -1438,12 +1725,49 @@ mod tests {
         writer.finalize().unwrap();
 
         let bytes = std::fs::read(path).unwrap();
-        let (frames, rate, waveform) = validate_playback_wav(&bytes, &Job::new()).unwrap();
+        let (frames, rate, waveform) =
+            validate_playback_audio(bytes.clone().into(), &Job::new()).unwrap();
         assert_eq!((frames, rate), (2, 32_000));
         assert_eq!(waveform.len(), 240);
         assert_eq!(waveform.iter().copied().fold(0.0f32, f32::max), 0.5);
         let decoder = Decoder::new(std::io::Cursor::new(bytes)).unwrap();
         let decoded = decoder.collect::<Vec<_>>();
         assert_eq!(decoded, [16384, -16384, 8192, -8192]);
+    }
+
+    #[cfg(feature = "audio-playback")]
+    #[test]
+    fn bundled_decoder_accepts_supported_offline_audio_formats() {
+        let fixtures: &[(&str, &[u8])] = &[
+            ("WAV", include_bytes!("../tests/fixtures/tone.wav")),
+            ("FLAC", include_bytes!("../tests/fixtures/tone.flac")),
+            ("MP3", include_bytes!("../tests/fixtures/tone.mp3")),
+            ("OGG", include_bytes!("../tests/fixtures/tone.ogg")),
+            ("M4A", include_bytes!("../tests/fixtures/tone.m4a")),
+            ("AIFF", include_bytes!("../tests/fixtures/tone.aiff")),
+        ];
+
+        for (format, bytes) in fixtures {
+            let (frames, sample_rate, waveform) =
+                validate_playback_audio(std::sync::Arc::from(*bytes), &Job::new()).unwrap_or_else(
+                    |error| panic!("bundled {format} decoder failed: {}", error.message),
+                );
+            assert!((8_000..=192_000).contains(&sample_rate), "{format}");
+            assert!(frames > 0, "{format}");
+            assert_eq!(waveform.len(), 240, "{format}");
+            assert!(waveform.iter().any(|peak| *peak > 0.0), "{format}");
+        }
+    }
+
+    #[cfg(feature = "audio-playback")]
+    #[test]
+    fn mp4_audio_uses_bounded_buffered_decoder_and_supports_seek() {
+        let bytes = std::sync::Arc::from(include_bytes!("../tests/fixtures/tone.m4a").as_slice());
+        let mut decoder = open_audio_decoder(bytes, &Job::new()).unwrap();
+        assert!(matches!(&decoder, AudioDecoder::Buffered(_)));
+        decoder
+            .try_seek(Duration::from_millis(100))
+            .expect("buffered MP4 audio should seek");
+        assert!(decoder.next().is_some());
     }
 }
