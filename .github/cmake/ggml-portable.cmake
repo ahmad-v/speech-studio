@@ -7,7 +7,9 @@ set(GGML_NATIVE OFF CACHE BOOL "Build a portable ggml CPU backend" FORCE)
 # support, but ggml's current intrinsic code is incompatible with its __fp16
 # pointer types. Disable this optional vector path for the Windows ARM build;
 # scalar kernels remain available and portable.
-if (CMAKE_SYSTEM_NAME STREQUAL "Windows" AND CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|aarch64)$")
+if (DEFINED ENV{CC_aarch64_pc_windows_msvc})
+    set(CMAKE_SYSTEM_NAME Windows CACHE STRING "Windows ARM64 Whisper target" FORCE)
+    set(CMAKE_SYSTEM_PROCESSOR ARM64 CACHE STRING "Windows ARM64 Whisper processor" FORCE)
     set(GGML_CPU_ARM_ARCH "armv8-a" CACHE STRING "Use baseline ARMv8-A on Windows ARM" FORCE)
 endif()
 
