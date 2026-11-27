@@ -35,7 +35,7 @@ WAV preparation downmixes and uses weighted frame averaging for supported PCM16 
 - `merge-cues`. Enter first and last cue numbers, such as `2,4`. Text is separated by newlines and the merged cue ends at the latest selected end time.
 - `delete-cue`. Enter the 1-based cue number. At least one cue must remain.
 
-The next ten transcript edits operate on a validated SRT draft and can optionally write a new `.srt` file:
+Transcript cue edits operate on a validated SRT draft and can optionally write a new `.srt` file:
 
 - `replace-cue-text`: JSON `{"cue":1,"text":"New words"}` replaces one cue while preserving its time.
 - `insert-cue`: JSON `{"index":2,"start_ms":2000,"end_ms":2800,"text":"Inserted"}` inserts at a 1-based position and checks time order and range.
@@ -47,4 +47,14 @@ The next ten transcript edits operate on a validated SRT draft and can optionall
 - `swap-cue-text`: JSON `{"first":1,"second":2}` swaps text while leaving the two time intervals fixed.
 - `replace-text-range`: JSON `{"first":1,"last":3,"find":"old","replace":"new"}` performs case-sensitive literal replacement in an inclusive cue range.
 
-The five cue edits return an SRT draft. You can also supply a new .srt output path to save the edit immediately.
+The preceding cue edits return an SRT draft. You can also supply a new .srt output path to save the edit immediately.
+
+## Cue text tools
+
+These ten tools edit an inclusive, 1-based cue range using JSON parameters. The range is limited to the existing transcript, timestamps are preserved, every cue must remain nonempty, and the rendered result stays within 2 MiB:
+
+- `uppercase-cue-range`, `lowercase-cue-range`, `title-case-cue-range`, `sentence-case-cue-range`, and `trim-cue-range`: `{"first":1,"last":3}`. Case tools support Unicode text; title/sentence case normalize spaces within each cue line.
+- `prefix-cue-range` and `suffix-cue-range`: `{"first":1,"last":3,"text":"[Speaker] "}` adds the literal text to each cue in range.
+- `reverse-cue-lines-range`, `sort-cue-lines-range`, and `deduplicate-cue-lines-range`: `{"first":1,"last":3}` reverses, Unicode-lexically sorts, or keeps the first exact occurrence of each line within each selected cue.
+
+An edit that would produce a blank cue, exceed the transcript limit, or create invalid SRT is rejected without writing output.

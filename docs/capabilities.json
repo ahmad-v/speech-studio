@@ -277,6 +277,16 @@
         "x86_64-unknown-linux-gnu"
       ],
       "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
-    }
+    },
+    {"operation":"uppercase-cue-range","description":"Uppercase text in an inclusive cue range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
+    {"operation":"lowercase-cue-range","description":"Lowercase text in an inclusive cue range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
+    {"operation":"title-case-cue-range","description":"Title-case words in an inclusive cue range while preserving line breaks","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
+    {"operation":"sentence-case-cue-range","description":"Apply sentence and line-start capitalization in an inclusive cue range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
+    {"operation":"trim-cue-range","description":"Trim leading and trailing whitespace in an inclusive cue range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
+    {"operation":"prefix-cue-range","description":"Add a prefix to each cue in an inclusive range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
+    {"operation":"suffix-cue-range","description":"Add a suffix to each cue in an inclusive range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
+    {"operation":"reverse-cue-lines-range","description":"Reverse line order in each cue in an inclusive range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
+    {"operation":"sort-cue-lines-range","description":"Sort lines in each cue in an inclusive range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"},
+    {"operation":"deduplicate-cue-lines-range","description":"Keep the first occurrence of each exact line in cues in an inclusive range","status":"implemented-unverified","targets":["x86_64-unknown-linux-gnu"],"fixture_status":"Linux cue-edit fixtures passed; hosted matrix pending"}
   ]
 }

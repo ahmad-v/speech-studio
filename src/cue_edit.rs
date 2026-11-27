@@ -60,6 +60,103 @@ struct CueRangeReplace {
     find: String,
     replace: String,
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CueTextRange {
+    first: usize,
+    last: usize,
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CueTextAffix {
+    first: usize,
+    last: usize,
+    text: String,
+}
+
+fn edit_text_range(
+    cues: &mut [Segment],
+    first: usize,
+    last: usize,
+    job: &Job,
+    transform: impl Fn(&str) -> Result<String>,
+) -> Result<()> {
+    let start = cue_index(first as u64, cues.len())?;
+    let end = cue_index(last as u64, cues.len())?;
+    if start > end {
+        return Err(Error::input("Cue range must be in ascending order"));
+    }
+    let mut total = cues.iter().map(|cue| cue.text.len()).sum::<usize>();
+    for cue in &mut cues[start..=end] {
+        job.check()?;
+        let changed = transform(&cue.text)?;
+        if changed.trim().is_empty() {
+            return Err(Error::input("Text edits must leave every cue nonempty"));
+        }
+        total = total
+            .checked_sub(cue.text.len())
+            .and_then(|size| size.checked_add(changed.len()))
+            .filter(|size| *size <= 2 * 1024 * 1024)
+            .ok_or_else(|| Error::input("Edited transcript exceeds the 2 MiB limit"))?;
+        cue.text = changed;
+    }
+    Ok(())
+}
+
+fn title_word(word: &str) -> String {
+    use unicode_segmentation::UnicodeSegmentation;
+    let lowercase = word.to_lowercase();
+    let mut capitalized = false;
+    lowercase
+        .graphemes(true)
+        .map(|grapheme| {
+            if !capitalized && grapheme.chars().any(char::is_alphabetic) {
+                capitalized = true;
+                grapheme.to_uppercase()
+            } else {
+                grapheme.to_owned()
+            }
+        })
+        .collect()
+}
+
+fn title_case(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            line.split_whitespace()
+                .map(title_word)
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn sentence_case(text: &str) -> String {
+    text.lines()
+        .map(|line| {
+            let mut sentence_start = true;
+            line.split_whitespace()
+                .map(|word| {
+                    let lowered = word.to_lowercase();
+                    let output = if sentence_start {
+                        title_word(&lowered)
+                    } else {
+                        lowered.clone()
+                    };
+                    sentence_start = lowered
+                        .chars()
+                        .rev()
+                        .find(|c| !c.is_whitespace())
+                        .is_some_and(|c| matches!(c, '.' | '?' | '!'));
+                    output
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
 pub(super) fn edit(
     operation: &str,
@@ -307,6 +404,48 @@ pub(super) fn edit(
                     .ok_or_else(|| Error::input("Edited transcript exceeds the 2 MiB limit"))?;
                 cue.text = cue.text.replace(&edit.find, &edit.replace);
             }
+        }
+        "uppercase-cue-range"
+        | "lowercase-cue-range"
+        | "title-case-cue-range"
+        | "sentence-case-cue-range"
+        | "trim-cue-range"
+        | "reverse-cue-lines-range"
+        | "sort-cue-lines-range"
+        | "deduplicate-cue-lines-range" => {
+            let range: CueTextRange = serde_json::from_str(parameter)?;
+            edit_text_range(&mut cues, range.first, range.last, job, |text| {
+                Ok(match operation {
+                    "uppercase-cue-range" => text.to_uppercase(),
+                    "lowercase-cue-range" => text.to_lowercase(),
+                    "title-case-cue-range" => title_case(text),
+                    "sentence-case-cue-range" => sentence_case(text),
+                    "trim-cue-range" => text.trim().to_owned(),
+                    "reverse-cue-lines-range" => text.lines().rev().collect::<Vec<_>>().join("\n"),
+                    "sort-cue-lines-range" => {
+                        let mut lines = text.lines().collect::<Vec<_>>();
+                        lines.sort();
+                        lines.join("\n")
+                    }
+                    _ => {
+                        let mut seen = std::collections::HashSet::new();
+                        text.lines()
+                            .filter(|line| seen.insert(*line))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    }
+                })
+            })?;
+        }
+        "prefix-cue-range" | "suffix-cue-range" => {
+            let edit: CueTextAffix = serde_json::from_str(parameter)?;
+            edit_text_range(&mut cues, edit.first, edit.last, job, |text| {
+                if operation == "prefix-cue-range" {
+                    Ok(format!("{}{}", edit.text, text))
+                } else {
+                    Ok(format!("{}{}", text, edit.text))
+                }
+            })?;
         }
         _ => return Err(Error::input("Unknown cue edit")),
     }
