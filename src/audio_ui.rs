@@ -1,22 +1,28 @@
 #![forbid(unsafe_code)]
 
 use crate::{
-    audio_model::{clamp_seek, format_time, transport_action, TransportAction},
-    load_playback_clip, PlaybackClip,
+    audio_model::{
+        active_cue, clamp_seek, decode_project, encode_project, format_time, transport_action,
+        CueHistory, TransportAction,
+    },
+    load_playback_clip, parse_stamp, stamp, PlaybackClip, Segment,
 };
 use iced::{
-    widget::{button, canvas, column, container, row, slider, text},
+    widget::{button, canvas, column, container, row, scrollable, slider, text, text_input},
     Color, Element, Length, Point, Rectangle, Renderer, Subscription, Task, Theme,
 };
 use localwright_core::Job;
+use localwright_core::{read_bounded, write_bytes};
 use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
 use std::{
     io::Cursor,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{mpsc, Arc, Mutex, MutexGuard},
     thread,
     time::Duration,
 };
+
+const CUES_PER_PAGE: usize = 25;
 
 struct Waveform<'a> {
     peaks: &'a [f32],
@@ -125,6 +131,12 @@ struct State {
     snapshot: Arc<Mutex<Snapshot>>,
     view: Snapshot,
     seek_value_ms: Option<f32>,
+    cues: CueHistory,
+    selected_cue: Option<usize>,
+    page_start: usize,
+    cue_start_text: String,
+    cue_end_text: String,
+    notice: String,
 }
 
 impl State {
@@ -148,6 +160,12 @@ impl State {
                 snapshot,
                 view,
                 seek_value_ms: None,
+                cues: CueHistory::new(Vec::new()),
+                selected_cue: None,
+                page_start: 0,
+                cue_start_text: String::new(),
+                cue_end_text: String::new(),
+                notice: String::new(),
             },
             Task::none(),
         )
@@ -170,6 +188,7 @@ impl State {
             }
             Message::FilePicked(Some(path)) => {
                 self.seek_value_ms = None;
+                self.notice.clear();
                 if self.commands.send(Command::Open(path)).is_ok() {
                     self.view.loading = true;
                     self.view.message = "Reading and validating audio…".into();
@@ -178,7 +197,110 @@ impl State {
                 }
             }
             Message::FilePicked(None) => {}
+            Message::OpenTranscript => {
+                return Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .set_title("Open SRT transcript or transcript project")
+                            .add_filter("SRT or JSON transcript", &["srt", "json"])
+                            .pick_file()
+                            .await
+                            .map(|file| file.path().to_path_buf())
+                    },
+                    Message::TranscriptPicked,
+                );
+            }
+            Message::TranscriptPicked(Some(path)) => match load_transcript(&path) {
+                Ok(cues) => {
+                    let count = cues.len();
+                    self.cues = CueHistory::new(cues);
+                    self.selected_cue = None;
+                    self.page_start = 0;
+                    self.cue_start_text.clear();
+                    self.cue_end_text.clear();
+                    self.notice = format!("Loaded {count} transcript cues.");
+                }
+                Err(error) => self.notice = format!("Could not open transcript: {error}"),
+            },
+            Message::TranscriptPicked(None) => {}
+            Message::SaveProject => {
+                return Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .set_title("Save transcript project as a new file")
+                            .add_filter("JSON transcript project", &["json"])
+                            .save_file()
+                            .await
+                            .map(|file| file.path().to_path_buf())
+                    },
+                    Message::ProjectSavePath,
+                );
+            }
+            Message::ProjectSavePath(Some(path)) => match save_project(&path, self.cues.cues()) {
+                Ok(()) => self.notice = format!("Saved project to {}", path.display()),
+                Err(error) => self.notice = format!("Could not save project: {error}"),
+            },
+            Message::ProjectSavePath(None) => {}
+            Message::SelectCue(index) => {
+                if let Some(cue) = self.cues.cues().get(index) {
+                    let (start, end) = (cue.start, cue.end);
+                    self.notice.clear();
+                    self.selected_cue = Some(index);
+                    self.page_start = index / CUES_PER_PAGE * CUES_PER_PAGE;
+                    self.cue_start_text = stamp(start);
+                    self.cue_end_text = stamp(end);
+                    self.send(Command::Seek(start));
+                }
+            }
+            Message::CuePagePrevious => {
+                self.page_start = self.page_start.saturating_sub(CUES_PER_PAGE);
+            }
+            Message::CuePageNext => {
+                if self.page_start + CUES_PER_PAGE < self.cues.cues().len() {
+                    self.page_start += CUES_PER_PAGE;
+                }
+            }
+            Message::CueStartChanged(value) => self.cue_start_text = value,
+            Message::CueEndChanged(value) => self.cue_end_text = value,
+            Message::ApplyCueTiming => {
+                if let Some(index) = self.selected_cue {
+                    let timing = parse_stamp(&self.cue_start_text)
+                        .and_then(|start| parse_stamp(&self.cue_end_text).map(|end| (start, end)));
+                    match timing {
+                        Ok((start, end)) => match self.cues.set_timing(index, start, end) {
+                            Ok(()) => {
+                                self.cue_start_text = stamp(start);
+                                self.cue_end_text = stamp(end);
+                                self.notice = "Cue timing updated.".into();
+                            }
+                            Err(error) => self.notice = format!("Invalid cue timing: {error}"),
+                        },
+                        Err(error) => {
+                            self.notice = format!("Invalid SRT timestamp: {}", error.message)
+                        }
+                    }
+                } else {
+                    self.notice = "Select a cue before editing its timing.".into();
+                }
+            }
+            Message::UndoCueTiming => {
+                self.notice = if self.cues.undo() {
+                    self.refresh_selected_timing();
+                    "Cue timing edit undone.".into()
+                } else {
+                    "No cue timing edit to undo.".into()
+                };
+            }
+            Message::RedoCueTiming => {
+                self.notice = if self.cues.redo() {
+                    self.refresh_selected_timing();
+                    "Cue timing edit redone.".into()
+                } else {
+                    "No cue timing edit to redo.".into()
+                };
+            }
             Message::Transport => {
+                self.notice.clear();
                 match transport_action(self.view.loaded, self.view.playing, self.view.paused) {
                     Some(TransportAction::Play) => self.send(Command::Play),
                     Some(TransportAction::Pause) => self.send(Command::Pause),
@@ -186,15 +308,25 @@ impl State {
                     None => {}
                 }
             }
-            Message::Stop => self.send(Command::Stop),
+            Message::Stop => {
+                self.notice.clear();
+                self.send(Command::Stop);
+            }
             Message::Scrub(value) => self.seek_value_ms = Some(value),
             Message::SeekReleased => {
                 if let Some(value) = self.seek_value_ms.take() {
+                    self.notice.clear();
                     self.send(Command::Seek(clamp_seek(value, self.view.duration_ms)));
                 }
             }
             Message::Tick => {
                 self.view = lock_snapshot(&self.snapshot).clone();
+                if let Some(active) = active_cue(self.cues.cues(), self.view.position_ms) {
+                    let page_start = active / CUES_PER_PAGE * CUES_PER_PAGE;
+                    if page_start != self.page_start {
+                        self.page_start = page_start;
+                    }
+                }
             }
         }
         Task::none()
@@ -203,6 +335,16 @@ impl State {
     fn send(&mut self, command: Command) {
         if self.commands.send(command).is_err() {
             self.view.message = "The audio worker has stopped.".into();
+        }
+    }
+
+    fn refresh_selected_timing(&mut self) {
+        if let Some(cue) = self
+            .selected_cue
+            .and_then(|index| self.cues.cues().get(index))
+        {
+            self.cue_start_text = stamp(cue.start);
+            self.cue_end_text = stamp(cue.end);
         }
     }
 
@@ -226,50 +368,139 @@ impl State {
         })
         .width(Length::Fill)
         .height(Length::Fixed(160.0));
-        container(
-            column![
-                row![
-                    text("Speech Studio audio workspace").size(24),
-                    button("Open WAV…").on_press(Message::OpenDialog),
-                ]
-                .spacing(16)
-                .align_y(iced::Alignment::Center)
-                .wrap(),
-                text(if self.view.file_name.is_empty() {
-                    "No audio file open".to_owned()
+        let cues = self.cues.cues();
+        let active = active_cue(cues, self.view.position_ms);
+        let cue_rows = cues
+            .iter()
+            .enumerate()
+            .skip(self.page_start)
+            .take(CUES_PER_PAGE)
+            .map(|(index, cue)| {
+                let marker = if active == Some(index) {
+                    "▶"
+                } else if self.selected_cue == Some(index) {
+                    "●"
                 } else {
-                    self.view.file_name.clone()
-                }),
-                waveform,
-                slider(0.0..=duration as f32, position as f32, Message::Scrub,)
-                    .step(10.0)
-                    .on_release(Message::SeekReleased)
-                    .width(Length::Fill),
-                row![
-                    text(format_time(position)),
-                    text(" / "),
-                    text(format_time(self.view.duration_ms)),
-                ]
-                .spacing(4),
-                row![
-                    button(action_label).on_press_maybe(action.map(|_| Message::Transport)),
-                    button("Stop").on_press_maybe(self.view.loaded.then_some(Message::Stop)),
-                    text(if self.view.loading {
-                        "Loading audio…".to_owned()
+                    " "
+                };
+                let cue_text = cue.text.chars().take(120).collect::<String>();
+                button(text(format!(
+                    "{marker} {:>4}  {}–{}  {cue_text}",
+                    index + 1,
+                    format_time(cue.start),
+                    format_time(cue.end),
+                )))
+                .width(Length::Fill)
+                .on_press(Message::SelectCue(index))
+                .into()
+            })
+            .collect::<Vec<Element<'_, Message>>>();
+        let cue_list = scrollable(column(cue_rows).spacing(4)).height(Length::Fixed(240.0));
+        let visible_end = (self.page_start + CUES_PER_PAGE).min(cues.len());
+        let visible_range = if cues.is_empty() {
+            "No transcript loaded".into()
+        } else {
+            format!(
+                "Cues {}–{visible_end} of {}",
+                self.page_start + 1,
+                cues.len()
+            )
+        };
+        scrollable(
+            container(
+                column![
+                    row![
+                        text("Speech Studio audio workspace").size(24),
+                        button("Open WAV…").on_press(Message::OpenDialog),
+                    ]
+                    .spacing(16)
+                    .align_y(iced::Alignment::Center)
+                    .wrap(),
+                    text(if self.view.file_name.is_empty() {
+                        "No audio file open".to_owned()
                     } else {
-                        self.view.message.clone()
-                    })
+                        self.view.file_name.clone()
+                    }),
+                    waveform,
+                    slider(0.0..=duration as f32, position as f32, Message::Scrub,)
+                        .step(10.0)
+                        .on_release(Message::SeekReleased)
+                        .width(Length::Fill),
+                    row![
+                        text(format_time(position)),
+                        text(" / "),
+                        text(format_time(self.view.duration_ms)),
+                    ]
+                    .spacing(4),
+                    row![
+                        text(format!(
+                            "Transcript: {} cues · active cue {}",
+                            cues.len(),
+                            active.map_or_else(|| "—".into(), |index| (index + 1).to_string())
+                        )),
+                        button("Open SRT / project…").on_press(Message::OpenTranscript),
+                        button("Save project…")
+                            .on_press_maybe((!cues.is_empty()).then_some(Message::SaveProject)),
+                    ]
+                    .spacing(10)
+                    .align_y(iced::Alignment::Center)
+                    .wrap(),
+                    row![
+                        button("Undo")
+                            .on_press_maybe(self.cues.can_undo().then_some(Message::UndoCueTiming)),
+                        button("Redo")
+                            .on_press_maybe(self.cues.can_redo().then_some(Message::RedoCueTiming)),
+                        button("‹ Cues").on_press_maybe(
+                            (self.page_start > 0).then_some(Message::CuePagePrevious)
+                        ),
+                        text(visible_range),
+                        button("Cues ›").on_press_maybe(
+                            (self.page_start + CUES_PER_PAGE < cues.len())
+                                .then_some(Message::CuePageNext)
+                        ),
+                    ]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center)
+                    .wrap(),
+                    cue_list,
+                    row![
+                        text("Selected cue start"),
+                        text_input("HH:MM:SS,mmm", &self.cue_start_text)
+                            .on_input(Message::CueStartChanged),
+                        text("end"),
+                        text_input("HH:MM:SS,mmm", &self.cue_end_text)
+                            .on_input(Message::CueEndChanged),
+                        button("Apply timing")
+                            .on_press_maybe(self.selected_cue.map(|_| Message::ApplyCueTiming)),
+                    ]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center)
+                    .wrap(),
+                    row![
+                        button(action_label).on_press_maybe(action.map(|_| Message::Transport)),
+                        button("Stop").on_press_maybe(self.view.loaded.then_some(Message::Stop)),
+                        text(if !self.notice.is_empty() {
+                            self.notice.clone()
+                        } else if self.view.loading {
+                            "Loading audio…".to_owned()
+                        } else {
+                            self.view.message.clone()
+                        })
+                    ]
+                    .spacing(12)
+                    .align_y(iced::Alignment::Center)
+                    .wrap(),
+                    text(
+                        "WAV only · local processing · physical audio device required for playback"
+                    ),
                 ]
-                .spacing(12)
-                .align_y(iced::Alignment::Center)
-                .wrap(),
-                text("WAV only · local processing · physical audio device required for playback"),
-            ]
-            .spacing(18),
+                .spacing(18),
+            )
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .padding(24),
         )
-        .width(Length::Fill)
         .height(Length::Fill)
-        .padding(24)
         .into()
     }
 
@@ -292,7 +523,40 @@ enum Message {
     Stop,
     Scrub(f32),
     SeekReleased,
+    OpenTranscript,
+    TranscriptPicked(Option<PathBuf>),
+    SaveProject,
+    ProjectSavePath(Option<PathBuf>),
+    SelectCue(usize),
+    CuePagePrevious,
+    CuePageNext,
+    CueStartChanged(String),
+    CueEndChanged(String),
+    ApplyCueTiming,
+    UndoCueTiming,
+    RedoCueTiming,
     Tick,
+}
+
+fn load_transcript(path: &Path) -> Result<Vec<Segment>, String> {
+    let bytes = read_bounded(path, 16 * 1024 * 1024).map_err(|error| error.message)?;
+    let is_json = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"));
+    decode_project(&bytes, is_json)
+}
+
+fn save_project(path: &Path, cues: &[Segment]) -> Result<(), String> {
+    if !path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+    {
+        return Err("Choose a .json project path".into());
+    }
+    let bytes = encode_project(cues)?;
+    write_bytes(path, &bytes).map_err(|error| error.message)
 }
 
 fn update_snapshot(snapshot: &Arc<Mutex<Snapshot>>, update: impl FnOnce(&mut Snapshot)) {

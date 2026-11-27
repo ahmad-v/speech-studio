@@ -268,18 +268,18 @@ fn prepare_wav(input: &Path, output: &Path, job: &Job) -> Result<u32> {
 }
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Segment {
+pub(crate) struct Segment {
     #[serde(rename = "start_ms")]
-    start: u64,
+    pub(crate) start: u64,
     #[serde(rename = "end_ms")]
-    end: u64,
-    text: String,
+    pub(crate) end: u64,
+    pub(crate) text: String,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Transcript {
-    schema_version: u32,
-    segments: Vec<Segment>,
+pub(crate) struct Transcript {
+    pub(crate) schema_version: u32,
+    pub(crate) segments: Vec<Segment>,
 }
 
 fn open_transcript(path: &Path, job: &Job) -> Result<(String, usize)> {
@@ -397,7 +397,7 @@ fn waveform_svg(samples: &[f32], job: &Job) -> Result<String> {
     Ok(svg)
 }
 
-fn stamp(ms: u64) -> String {
+pub(crate) fn stamp(ms: u64) -> String {
     format!(
         "{:02}:{:02}:{:02},{:03}",
         ms / 3600000,
@@ -406,7 +406,7 @@ fn stamp(ms: u64) -> String {
         ms % 1000
     )
 }
-fn parse_stamp(s: &str) -> Result<u64> {
+pub(crate) fn parse_stamp(s: &str) -> Result<u64> {
     let v = s.split([':', ',']).collect::<Vec<_>>();
     if v.len() != 4
         || v.iter()
@@ -424,7 +424,7 @@ fn parse_stamp(s: &str) -> Result<u64> {
     }
     Ok(n[0] * 3600000 + n[1] * 60000 + n[2] * 1000 + n[3])
 }
-fn parse(s: &str) -> Result<Vec<Segment>> {
+pub(crate) fn parse(s: &str) -> Result<Vec<Segment>> {
     if s.len() > 2 * 1024 * 1024 {
         return Err(Error::input("Subtitle exceeds limit"));
     }
@@ -691,7 +691,7 @@ fn render_lrc(segments: &[Segment], job: &Job) -> Result<String> {
     Ok(out)
 }
 
-fn render(segments: &[Segment]) -> String {
+pub(crate) fn render(segments: &[Segment]) -> String {
     segments
         .iter()
         .enumerate()
