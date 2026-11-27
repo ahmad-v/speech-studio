@@ -11,6 +11,10 @@ if (DEFINED ENV{CC_aarch64_pc_windows_msvc})
     set(CMAKE_SYSTEM_NAME Windows CACHE STRING "Windows ARM64 Whisper target" FORCE)
     set(CMAKE_SYSTEM_PROCESSOR ARM64 CACHE STRING "Windows ARM64 Whisper processor" FORCE)
     set(GGML_CPU_ARM_ARCH "armv8-a" CACHE STRING "Use baseline ARMv8-A on Windows ARM" FORCE)
+    # clang-cl reports support for -mfp16-format=ieee, but ggml's FP16
+    # vector macros use incompatible __fp16 pointer types with its internal
+    # uint16_t representation. Keep the safe scalar half conversion path.
+    set(GGML_COMPILER_SUPPORTS_FP16_FORMAT_I3E FALSE CACHE INTERNAL "Disable incompatible clang-cl FP16 vectors" FORCE)
 endif()
 
 # whisper-rs-sys' Windows ARM build uses the Ninja generator and its CMake
