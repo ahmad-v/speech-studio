@@ -6,8 +6,12 @@ mod audio_model;
 pub mod audio_ui;
 mod cue_edit;
 use localwright_core::*;
+#[cfg(feature = "audio-playback")]
+use rodio::Source;
 #[cfg(feature = "asr")]
 use sha2::{Digest, Sha256};
+#[cfg(feature = "audio-playback")]
+use std::time::Duration;
 use std::{io::Cursor, path::Path};
 pub const OPERATIONS:&[Operation]=&[
  Operation{id:"audio-info",label:"Audio inspection",hint:"Inspect local 16 kHz mono PCM16 WAV; maximum 10 minutes."},
