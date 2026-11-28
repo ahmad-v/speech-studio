@@ -1,6 +1,12 @@
 name: Offline speaker diarization pack
 
 on:
+  push:
+    paths:
+      - "src/diarization.rs"
+      - "packaging/diarization/**"
+      - "packaging/diarization_pack.py"
+      - ".github/workflows/diarization-validation.yml"
   pull_request:
     types: [labeled, synchronize]
   workflow_dispatch:
@@ -14,7 +20,7 @@ concurrency:
 
 jobs:
   linux-x64:
-    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'diarization-validation'))
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'diarization-validation'))
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -55,7 +61,7 @@ jobs:
         run: cargo build --locked --features tts --bin speech-studio --jobs 2
 
       - name: Run diarization result normalization tests
-        run: cargo test --locked --features tts --lib diarization::tests:: -- --nocapture
+        run: 'cargo test --locked --features tts --lib diarization::tests:: -- --nocapture'
 
       - name: Assemble and install the offline model pack
         run: |
