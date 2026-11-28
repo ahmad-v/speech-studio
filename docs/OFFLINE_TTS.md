@@ -1,4 +1,4 @@
-# Offline text-to-speech (experimental)
+# Offline text-to-speech (development feature)
 
 The optional `tts` feature adds native offline English synthesis through the Rust
 `sherpa-onnx` 2.0.3 API and Kitten TTS Nano 0.8 int8. The Iced audio workspace
@@ -57,9 +57,10 @@ card files occupy about 30.8 MiB before packaging. No application download or
 runtime package manager is required. The manual `Offline TTS development
 bundle` workflow builds an unsigned Linux x64 bundle, extracts it, verifies the
 installed pack through the application, synthesizes a sample, and checks the
-resulting WAV before uploading a short-lived artifact. That package workflow
-has not yet been run; other target-specific bundles remain future distribution
-work.
+resulting WAV before uploading a short-lived artifact. The integration job
+verified pack assembly and inference from the build workspace; the separate
+extracted-bundle lifecycle workflow has not yet been run. Other target-specific
+bundled model packs remain future distribution work.
 
 ## Verification status
 
@@ -72,12 +73,11 @@ not rely on the training dataset's status.
 Source checks verify manifest fields, archive boundaries, source provenance,
 CMUdict-to-IPA conversion, voice IDs, file hashes, symlink rejection, and
 no-overwrite output behavior. Seven packer tests and all 19 Python packaging
-tests pass. The pinned model, CMUdict, and license were assembled into a private
-pack. Integration run 46171475968 passed optional-feature compilation/tests,
-assembled the real pack, synthesized an offline sample, validated its WAV, and
-checked for IP network access. The native matrix still failed the combined
-Windows x64 and ARM64 link because of an MSVC C-runtime mismatch; the in-process
-Whisper build configuration is being corrected. TTS has not had voice-quality,
-pronunciation, multilingual, runtime, memory, or physical audio-device
-validation, and complete cross-platform model-pack distribution is not yet
-verified.
+tests pass. Integration run 46177120953 passed optional-feature compilation
+and tests, assembled the pinned model pack, synthesized a sample offline,
+validated its WAV, and checked for IP network access. Native run 46177120949
+passed all five targets, including combined Windows x64 and ARM64 builds;
+generated Whisper CMake cache values were checked against Sherpa's static CRT
+configuration. Voice quality, pronunciation, multilingual support, runtime,
+memory, physical audio-device behavior, and extracted-bundle lifecycle remain
+unverified. This feature is not a signed release package.
