@@ -183,6 +183,19 @@ fn main() {
         .very_verbose(true)
         .pic(true);
 
+    if target.contains("-pc-windows-msvc") {
+        // Sherpa-ONNX's supported Windows prebuilt archives use /MT. The
+        // whisper.cpp CMake project declares a 3.5 minimum, so CMP0091 is not
+        // enabled by its own policy version. Set the default policy before
+        // its project() call and explicitly select the matching static CRT.
+        config
+            .define("CMAKE_POLICY_DEFAULT_CMP0091", "NEW")
+            .define(
+                "CMAKE_MSVC_RUNTIME_LIBRARY",
+                "MultiThreaded$<$<CONFIG:Debug>:Debug>",
+            );
+    }
+
     if cfg!(target_os = "windows") {
         config.cxxflag("/utf-8");
         println!("cargo:rustc-link-lib=advapi32");

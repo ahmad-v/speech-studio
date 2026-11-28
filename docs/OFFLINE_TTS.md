@@ -63,11 +63,21 @@ work.
 
 ## Verification status
 
+The pinned model card's SPDX metadata and the engine-pack's Apache-2.0 license
+are retained with the weights; the reference voice rows are generated from the
+same pinned model repository's `voices.npz`. CMUdict has its own BSD-style
+license and notice. This evidence covers the distributed model assets and does
+not rely on the training dataset's status.
+
 Source checks verify manifest fields, archive boundaries, source provenance,
 CMUdict-to-IPA conversion, voice IDs, file hashes, symlink rejection, and
-no-overwrite output behavior. Seven packer tests and all 19 Python packaging tests
-pass locally. The pinned model, CMUdict, and license were assembled into a
-private pack successfully; this validates the packer against the real inputs,
-not speech generation. Hosted Rust feature compilation and actual offline
-inference smoke verification remain pending. No accuracy, pronunciation,
-runtime, memory, or physical audio-device verification is claimed here.
+no-overwrite output behavior. Seven packer tests and all 19 Python packaging
+tests pass. The pinned model, CMUdict, and license were assembled into a private
+pack. Integration run 46171475968 passed optional-feature compilation/tests,
+assembled the real pack, synthesized an offline sample, validated its WAV, and
+checked for IP network access. The native matrix still failed the combined
+Windows x64 and ARM64 link because of an MSVC C-runtime mismatch; the in-process
+Whisper build configuration is being corrected. TTS has not had voice-quality,
+pronunciation, multilingual, runtime, memory, or physical audio-device
+validation, and complete cross-platform model-pack distribution is not yet
+verified.

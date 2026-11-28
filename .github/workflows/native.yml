@@ -50,14 +50,6 @@ jobs:
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: test "$RUNNER_ARCH" = "$EXPECTED_ARCH"
 
-      - name: Align Whisper with the private Sherpa MSVC runtime
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          # Sherpa's verified Windows static libraries use /MT. Build Whisper's
-          # C/C++ objects with the same CRT to avoid incompatible mixed-runtime links.
-          'CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded$<$<CONFIG:Debug>:Debug>' >> $env:GITHUB_ENV
-
       - name: Install Linux GUI prerequisites
         if: runner.os == 'Linux'
         run: |
@@ -107,9 +99,9 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock') }}-debug-native-gui-all-features
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock') }}-${{ runner.os == 'Windows' && 'msvc-static-crt-v1-' || '' }}debug-native-gui-all-features
           restore-keys: |
-            cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-
+            cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ runner.os == 'Windows' && 'msvc-static-crt-v1-' || '' }}
 
       - name: Verify native GUI build and tests
         env:
@@ -119,11 +111,33 @@ jobs:
           cargo test --locked --target "$BUILD_TARGET"
           cargo test --locked --no-default-features --target "$BUILD_TARGET"
 
-      - name: Verify optional ASR, TTS, and audio builds and tests on native target
+      - name: Check optional ASR, TTS, and audio build on native target
         env:
           BUILD_TARGET: ${{ matrix.target }}
         run: |
           cargo check --locked --all-targets --all-features --target "$BUILD_TARGET"
+
+      - name: Verify Whisper and Sherpa use the same MSVC runtime
+        if: runner.os == 'Windows'
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          shopt -s nullglob
+          caches=(target/"$BUILD_TARGET"/debug/build/whisper-rs-sys-*/out/build/CMakeCache.txt)
+          if ((${#caches[@]} == 0)); then
+            echo "Whisper CMakeCache.txt was not found; runtime selection cannot be verified." >&2
+            exit 1
+          fi
+          for cache in "${caches[@]}"; do
+            grep -Eq '^CMAKE_POLICY_DEFAULT_CMP0091:[^=]+=NEW$' "$cache"
+            grep -Eq '^CMAKE_MSVC_RUNTIME_LIBRARY:[^=]+=MultiThreaded\$<\$<CONFIG:Debug>:Debug>$' "$cache"
+            echo "Verified static MSVC runtime and CMP0091=NEW in $cache"
+          done
+
+      - name: Run optional ASR, TTS, and audio tests on native target
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
           cargo test --locked --all-features --target "$BUILD_TARGET"
 
       - name: Preserve verified Windows x64 Whisper ABI bindings
