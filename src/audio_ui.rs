@@ -1213,7 +1213,7 @@ impl State {
                     .on_press_maybe(if self.diarization_busy { Some(Message::CancelDiarization) } else if self.view.loaded && !cues.is_empty() { Some(Message::DiarizeTranscript) } else { None }),
                 button("Save speaker-labeled JSON…")
                     .on_press_maybe(self.diarized.as_ref().is_some_and(|document| document.segments.len() == cues.len()).then_some(Message::SaveDiarizedTranscript)),
-                text(format!("{}", self.diarized.as_ref().map_or_else(|| "Model pack status: requires verified offline speaker pack".to_owned(), |document| format!("{} speaker labels", document.speaker_labels.len())))),
+                text(self.diarized.as_ref().map_or_else(|| "Model pack status: requires verified offline speaker pack".to_owned(), |document| format!("{} speaker labels", document.speaker_labels.len()))),
             ].spacing(8).align_y(iced::Alignment::Center).wrap(),
             row![
                 text("Selected cue speaker (zero-based; blank clears)"),
@@ -1508,14 +1508,13 @@ fn tts_task(
 fn diarization_task(path: PathBuf, cues: Vec<Segment>, job: Job) -> Task<Message> {
     Task::perform(
         async move {
-            let result = thread::spawn(move || {
+            thread::spawn(move || {
                 crate::diarization::diarize_cues(&path, &cues, &job).map_err(|error| error.message)
             })
             .join()
             .unwrap_or_else(|_| {
                 Err("Offline speaker diarization worker stopped unexpectedly".into())
-            });
-            result
+            })
         },
         Message::DiarizationFinished,
     )
