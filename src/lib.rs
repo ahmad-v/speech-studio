@@ -18,7 +18,7 @@ use std::{io::Cursor, path::Path};
 pub const OPERATIONS:&[Operation]=&[
  Operation{id:"audio-info",label:"Audio inspection",hint:"Inspect local 16 kHz mono PCM16 WAV; maximum 10 minutes."},
  #[cfg(feature="audio-playback")]
- Operation{id:"play-wav",label:"Play local audio",hint:"Open and play local WAV, FLAC, MP3, OGG, AAC/M4A or AIFF audio (up to 8 channels, 8–192 kHz, 10 minutes, 128 MiB input and 256 MiB decoded memory). Leave output and parameter blank. Cancel stops playback. Format support depends on the bundled native decoders."},
+ Operation{id:"play-wav",label:"Play local audio",hint:"Open and play local WAV, FLAC, MP3, OGG, AAC/M4A or AIFF audio (up to 8 channels, 8–192 kHz, 10 minutes, 128 MiB input and 256 MiB decoded memory). The separate native audio workspace also supports transcript cue selection, multi-line cue text editing, literal find/replace, timing edits, waveform seeking, and undo/redo. Leave output and parameter blank. Cancel stops playback. Format support depends on the bundled native decoders."},
  Operation{id:"detect-voice-activity",label:"Detect voice activity",hint:"Estimate active intervals from mono 16 kHz PCM16 WAV energy. Results are an energy heuristic, not neural VAD or diarization. Choose a new .json output."},
  Operation{id:"analyze-transcript",label:"Analyze transcript",hint:"Estimate language and linguistic counts from an SRT draft or file. Language confidence is from a local text classifier; no ASR confidence is invented. Choose a new .json output."},
  Operation{id:"waveform-svg",label:"Export WAV waveform",hint:"Export a peak waveform from 16 kHz mono PCM16 WAV to a new SVG."},

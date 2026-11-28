@@ -4,6 +4,7 @@ use std::path::PathBuf;
 const MAX_HISTORY: usize = 20;
 const MAX_CUES: usize = 20_000;
 const MAX_TIMESTAMP_MS: u64 = 100 * 60 * 60 * 1000 - 1;
+const MAX_EDITED_TRANSCRIPT_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TransportAction {
@@ -88,6 +89,13 @@ pub(crate) fn bound_waveform(peaks: &[f32], max_bins: usize) -> Vec<f32> {
 pub(crate) fn active_cue(cues: &[Segment], position_ms: u64) -> Option<usize> {
     cues.iter()
         .position(|cue| cue.start <= position_ms && position_ms < cue.end)
+}
+
+pub(crate) fn matching_cue_indices(cues: &[Segment], query: &str) -> Vec<usize> {
+    cues.iter()
+        .enumerate()
+        .filter_map(|(index, cue)| (query.is_empty() || cue.text.contains(query)).then_some(index))
+        .collect()
 }
 
 #[cfg(test)]
@@ -264,9 +272,73 @@ impl CueHistory {
         }
         changed[index].start = start_ms;
         changed[index].end = end_ms;
+        self.commit(changed, "Cue timing would make the project invalid")
+    }
+
+    pub(crate) fn set_text(&mut self, index: usize, text: &str) -> Result<(), String> {
+        let mut changed = self.current.clone();
+        let cue = changed
+            .get_mut(index)
+            .ok_or_else(|| "Select a cue before editing its text".to_owned())?;
+        if text.contains('\0') || text.trim().is_empty() {
+            return Err("Cue text must contain visible text and no NUL characters".into());
+        }
+        cue.text = text.replace("\r\n", "\n").replace('\r', "\n");
+        self.commit(changed, "Cue text would make the project invalid")
+    }
+
+    /// Replace literal, case-sensitive text in one cue or throughout the transcript.
+    /// The returned count is the number of replacements, not the number of changed cues.
+    pub(crate) fn replace_text(
+        &mut self,
+        cue_index: Option<usize>,
+        find: &str,
+        replacement: &str,
+    ) -> Result<usize, String> {
+        if find.is_empty() {
+            return Err("Find text cannot be empty".into());
+        }
+        if find.len() > 64 * 1024 || replacement.len() > 64 * 1024 {
+            return Err("Find and replacement text are limited to 64 KiB each".into());
+        }
+        if replacement.contains('\0') {
+            return Err("Replacement text cannot contain NUL characters".into());
+        }
+        let mut changed = self.current.clone();
+        let range = match cue_index {
+            Some(index) if index < changed.len() => index..index + 1,
+            Some(_) => return Err("Select an existing cue before replacing its text".into()),
+            None => 0..changed.len(),
+        };
+        let mut replacements = 0usize;
+        for cue in &mut changed[range] {
+            replacements = replacements
+                .checked_add(cue.text.matches(find).count())
+                .ok_or_else(|| "Replacement count exceeds the limit".to_owned())?;
+            cue.text = cue.text.replace(find, replacement);
+            if cue.text.trim().is_empty() {
+                return Err("Replacement would leave a cue without visible text".into());
+            }
+        }
+        if replacements > 0 {
+            self.commit(changed, "Replacement would make the project invalid")?;
+        }
+        Ok(replacements)
+    }
+
+    fn commit(&mut self, changed: Vec<Segment>, invalid_message: &str) -> Result<(), String> {
+        if changed.len() > MAX_CUES {
+            return Err("Transcript exceeds the 20,000 cue limit".into());
+        }
+        if changed == self.current {
+            return Ok(());
+        }
         let draft = render(&changed);
+        if draft.len() > MAX_EDITED_TRANSCRIPT_BYTES {
+            return Err("Edited transcript exceeds the 2 MiB limit".into());
+        }
         if parse(&draft).map_err(|error| error.message)? != changed {
-            return Err("Cue timing would make the project invalid".into());
+            return Err(invalid_message.into());
         }
         self.undo
             .push(std::mem::replace(&mut self.current, changed));
@@ -365,6 +437,18 @@ mod tests {
     }
 
     #[test]
+    fn transcript_filter_is_literal_case_sensitive_and_keeps_original_indices() {
+        let cues = crate::parse(
+            "1\n00:00:00,000 --> 00:00:01,000\nA cat\n\n2\n00:00:01,000 --> 00:00:02,000\nA Cat\n\n3\n00:00:02,000 --> 00:00:03,000\nDog",
+        )
+        .unwrap();
+        assert_eq!(matching_cue_indices(&cues, "cat"), [0]);
+        assert_eq!(matching_cue_indices(&cues, "Cat"), [1]);
+        assert_eq!(matching_cue_indices(&cues, ""), [0, 1, 2]);
+        assert!(matching_cue_indices(&cues, "absent").is_empty());
+    }
+
+    #[test]
     fn cue_timing_edits_validate_and_support_undo_redo() {
         let cues = crate::parse(
             "1\n00:00:00,000 --> 00:00:01,000\nOne\n\n2\n00:00:01,000 --> 00:00:02,000\nTwo",
@@ -379,6 +463,47 @@ mod tests {
         assert_eq!(history.cues()[0].start, 0);
         assert!(history.redo());
         assert_eq!(history.cues()[0].start, 100);
+    }
+
+    #[test]
+    fn cue_text_edit_preserves_timing_and_multiline_content_through_history() {
+        let cues = crate::parse(
+            "1\n00:00:00,100 --> 00:00:01,000\nHello\nthere\n\n2\n00:00:01,200 --> 00:00:02,000\nWorld",
+        )
+        .unwrap();
+        let mut history = CueHistory::new(cues);
+        history.set_text(0, "Hello\r\nagain").unwrap();
+        assert_eq!(history.cues()[0].text, "Hello\nagain");
+        assert_eq!(history.cues()[0].start, 100);
+        assert!(history.undo());
+        assert_eq!(history.cues()[0].text, "Hello\nthere");
+        assert!(history.redo());
+        assert_eq!(history.cues()[0].text, "Hello\nagain");
+        assert!(history.set_text(0, " \n ").is_err());
+        assert!(history.set_text(0, "bad\0text").is_err());
+        assert_eq!(history.cues()[0].text, "Hello\nagain");
+    }
+
+    #[test]
+    fn literal_replace_works_per_cue_or_globally_and_is_undoable() {
+        let cues = crate::parse(
+            "1\n00:00:00,100 --> 00:00:01,000\nA cat and cat\n\n2\n00:00:01,200 --> 00:00:02,000\nCat",
+        )
+        .unwrap();
+        let mut history = CueHistory::new(cues);
+        assert_eq!(history.replace_text(Some(0), "cat", "dog").unwrap(), 2);
+        assert_eq!(history.cues()[0].text, "A dog and dog");
+        assert_eq!(history.cues()[1].text, "Cat");
+        assert_eq!(history.replace_text(None, "Cat", "cat").unwrap(), 1);
+        assert_eq!(history.cues()[1].text, "cat");
+        assert!(history.replace_text(None, "", "x").is_err());
+        assert!(history.replace_text(None, "cat", "").is_err());
+        assert!(history.undo());
+        assert_eq!(history.cues()[1].text, "Cat");
+        assert!(history.undo());
+        assert_eq!(history.cues()[0].text, "A cat and cat");
+        assert!(history.redo());
+        assert_eq!(history.cues()[0].text, "A dog and dog");
     }
 
     #[test]
