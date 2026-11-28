@@ -14,7 +14,8 @@ The pack uses `Helsinki-NLP/opus-mt-en-fr`, pinned to Hugging Face revision
 Apache-2.0. The packer includes that model card and the full Apache license
 text. The upstream revision stores weights as a legacy PyTorch pickle. The
 distribution workflow first verifies that source file's pinned SHA-256, then
-uses a build-only pinned CPU PyTorch 2.5.1 and safetensors 0.6.2 converter to
+uses a build-only pinned CPU PyTorch 2.5.1, safetensors 0.6.2 and packaging
+25.0 converter toolchain to
 write a deterministic safetensors file for Candle. The converter checks tied
 encoder/decoder embedding aliases are identical before retaining the canonical
 shared tensor. The app itself does not include or invoke Python or PyTorch.

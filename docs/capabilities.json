@@ -405,14 +405,14 @@
       "description": "Editable native English-to-French text translation with Candle Marian inference and a separate hash-verified offline OPUS-MT pack; bounded input/output and cancellation between generated tokens",
       "status": "implemented-unverified",
       "targets": [],
-      "fixture_status": "Bounded headless Rust check passes; 3 packer safety tests pass. Actual model-backed offline inference, GUI compilation and translation-quality validation are pending."
+      "fixture_status": "Build-only pinned PyTorch 2.5.1+cpu/safetensors 0.6.2 conversion verifies the 300,827,685-byte upstream SHA and tied Marian embedding aliases, yielding a pinned 300,803,144-byte safetensors asset. The verified offline pack assembled and installed locally; 4 packer safety tests pass. Candle inference smoke, GUI compilation, cross-target checks and translation-quality validation remain pending."
     },
     {
       "operation": "verify-translation-pack",
-      "description": "Check the application-relative OPUS-MT model, config, SentencePiece vocabularies, model card, Apache license and third-party notice against exact pinned hashes",
+      "description": "Check the application-relative converted OPUS-MT safetensors model, source revision/hash provenance, config, SentencePiece vocabularies, model card, Apache license and third-party notice against exact pinned hashes",
       "status": "implemented-unverified",
       "targets": [],
-      "fixture_status": "Packer tests cover manifest agreement, altered-asset and archive-path rejection, verified extraction and no-overwrite behavior. The real 301 MB pack has not yet been assembled or run."
+      "fixture_status": "Packer tests cover manifest agreement, altered-asset and archive-path rejection, verified extraction and no-overwrite behavior. A real converted 280 MB pack was assembled, verified, and installed locally. Runtime Candle verification and clean-host offline inference remain pending."
     }
   ]
 }

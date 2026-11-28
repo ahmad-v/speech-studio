@@ -24,7 +24,10 @@ MODEL_LICENSE = "Apache-2.0 (model card metadata at the pinned upstream revision
 TOKENIZER_REPO = MODEL_REPO
 TORCH_VERSION = "2.5.1+cpu"
 SAFETENSORS_VERSION = "0.6.2"
-CONVERSION_TOOLCHAIN = f"PyTorch {TORCH_VERSION}; safetensors {SAFETENSORS_VERSION}"
+PACKAGING_VERSION = "25.0"
+CONVERSION_TOOLCHAIN = (
+    f"PyTorch {TORCH_VERSION}; safetensors {SAFETENSORS_VERSION}; packaging {PACKAGING_VERSION}"
+)
 SOURCE_MODEL_FILE = "pytorch_model.bin"
 SOURCE_MODEL_BYTES = 300_827_685
 SOURCE_MODEL_SHA256 = "cc1de10b49342ad2f33e06bc4474ddd6eaca278474903c4a8636ce15680d64de"
@@ -41,7 +44,7 @@ PACK_ASSETS = {
 }
 PACK_NOTICES = {
     "LICENSE-APACHE-2.0": (11_358, "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"),
-    "THIRD_PARTY_NOTICE.txt": (483, "c7efb399aff131eec6b2269125330b2bcfe1048a29aa2b17a6b04bee4f167aa0"),
+    "THIRD_PARTY_NOTICE.txt": (499, "0c285eaca22f92fa19cd1ec5fe0f6f2129b04b4b7ac7e2de73f7b3df73d1c5b2"),
 }
 UPSTREAM_FILES = {"MODEL_CARD.md": "README.md"}
 MAX_ASSET_BYTES = 320 * 1024 * 1024
@@ -103,16 +106,21 @@ def convert_weights(source: Path, destination: Path) -> None:
     """Safely convert the pinned legacy PyTorch pickle to Candle-readable safetensors."""
     try:
         import torch
+        import safetensors
+        import packaging
         from safetensors.torch import save_file
     except ImportError as error:
         raise RuntimeError(
             f"offline translation conversion requires pinned {CONVERSION_TOOLCHAIN}"
         ) from error
-    import safetensors
-    if torch.__version__ != TORCH_VERSION or safetensors.__version__ != SAFETENSORS_VERSION:
+    if (
+        torch.__version__ != TORCH_VERSION
+        or safetensors.__version__ != SAFETENSORS_VERSION
+        or packaging.__version__ != PACKAGING_VERSION
+    ):
         raise RuntimeError(
             f"expected {CONVERSION_TOOLCHAIN}, found PyTorch {torch.__version__}; "
-            f"safetensors {safetensors.__version__}"
+            f"safetensors {safetensors.__version__}; packaging {packaging.__version__}"
         )
     state = torch.load(source, map_location="cpu", weights_only=True)
     if not isinstance(state, dict) or not state or not all(
