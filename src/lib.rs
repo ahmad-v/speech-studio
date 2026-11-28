@@ -27,9 +27,9 @@ use std::{io::Cursor, path::Path};
 pub const OPERATIONS:&[Operation]=&[
  Operation{id:"audio-info",label:"Audio inspection",hint:"Inspect local 16 kHz mono PCM16 WAV; maximum 10 minutes."},
  #[cfg(feature="tts")]
- Operation{id:"synthesize-speech",label:"Synthesize English speech",hint:"Synthesize English text offline with the local single-speaker LJSpeech voice. Enter JSON {\"text\":\"Hello\",\"speed\":1.0}; choose a new .wav output. Requires the separately installed, SHA-256 verified voice pack. English only; not voice cloning."},
+ Operation{id:"synthesize-speech",label:"Synthesize English speech",hint:"Synthesize English text offline with Kitten Nano. Enter JSON {\"text\":\"Hello\",\"voice\":\"Jasper\",\"speed\":1.0}; choose a new .wav output. Requires the separately installed, SHA-256 verified model pack. Eight English voices; not voice cloning."},
  #[cfg(feature="tts")]
- Operation{id:"verify-tts-pack",label:"Verify offline TTS voice pack",hint:"Verify the application-relative English LJSpeech voice files against the pinned SHA-256 manifest. Leave input, output and parameter blank."},
+ Operation{id:"verify-tts-pack",label:"Verify offline TTS voice pack",hint:"Verify the application-relative Kitten model, eight-voice data, tokens, CMUdict-derived lexicon, and notices against the pinned SHA-256 manifest. Leave input, output and parameter blank."},
  #[cfg(feature="audio-playback")]
  Operation{id:"play-wav",label:"Play local audio",hint:"Open and play local WAV, FLAC, MP3, OGG, AAC/M4A or AIFF audio (up to 8 channels, 8–192 kHz, 10 minutes, 128 MiB input and 256 MiB decoded memory). The separate native audio workspace also supports transcript cue selection, multi-line cue text editing, literal find/replace, timing edits, waveform seeking, and undo/redo. Leave output and parameter blank. Cancel stops playback. Format support depends on the bundled native decoders."},
  Operation{id:"detect-voice-activity",label:"Detect voice activity",hint:"Estimate active intervals from mono 16 kHz PCM16 WAV energy. Results are an energy heuristic, not neural VAD or diarization. Choose a new .json output."},

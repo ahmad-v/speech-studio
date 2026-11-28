@@ -1,15 +1,14 @@
 #![forbid(unsafe_code)]
 
-//! Offline speech synthesis using sherpa-onnx and the pinned LJSpeech voice pack.
+//! Offline speech synthesis using sherpa-onnx and the pinned Kitten Nano voice pack.
 
 use hound::{SampleFormat, WavSpec, WavWriter};
 use localwright_core::{read_bounded, Error, Job, Result};
-use piper_plus_g2p::{english::EnglishPhonemizer, Phonemizer};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sherpa_onnx::{
-    GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsModelConfig,
-    OfflineTtsVitsModelConfig,
+    GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsKittenModelConfig,
+    OfflineTtsModelConfig,
 };
 use std::{
     fs::{self, File},
@@ -21,7 +20,10 @@ use std::{
     },
 };
 
-const PACK_ID: &str = "tts-en-us-ljspeech-medium-int8";
+const PACK_ID: &str = "tts-en-us-kitten-nano-v0_8-int8";
+const MODEL_REVISION: &str = "84781d74e29ee25217551556398b42f80593a813";
+const CMUDICT_REVISION: &str = "74790861f652b15e4ac49015a90074ad62a27690";
+const CMUDICT_SHA256: &str = "81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22";
 const MAX_TEXT_BYTES: usize = 8 * 1024;
 const MAX_OUTPUT_SECONDS: usize = 180;
 const MAX_OUTPUT_SAMPLES: usize = 48_000 * MAX_OUTPUT_SECONDS;
@@ -33,12 +35,18 @@ struct PackManifest {
     id: String,
     version: String,
     engine_version: String,
+    model_revision: String,
+    model_license: String,
+    voice_assets_license: String,
+    lexicon_source_revision: String,
+    lexicon_source_license: String,
+    lexicon_source_sha256: String,
     source_archive_sha256: String,
     source_archive_size_bytes: u64,
     files: Vec<PackFile>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct PackFile {
     name: String,
@@ -52,9 +60,15 @@ fn manifest() -> Result<PackManifest> {
     if parsed.schema_version != 1
         || parsed.id != PACK_ID
         || parsed.engine_version != "2.0.3"
-        || parsed.files.len() != 4
+        || parsed.model_revision != MODEL_REVISION
+        || parsed.model_license != "Apache-2.0"
+        || parsed.voice_assets_license != "Apache-2.0 (same pinned upstream model repository)"
+        || parsed.lexicon_source_revision != CMUDICT_REVISION
+        || !parsed.lexicon_source_license.contains("BSD-style")
+        || parsed.lexicon_source_sha256 != CMUDICT_SHA256
+        || parsed.files.len() != 7
         || parsed.source_archive_sha256.len() != 64
-        || parsed.source_archive_size_bytes != 21_090_429
+        || parsed.source_archive_size_bytes != 31_220_690
     {
         return Err(Error::input("Unsupported offline TTS model manifest"));
     }
@@ -163,9 +177,9 @@ fn verify_pack_files_at(root: &Path, pack: &PackManifest, job: &Job) -> Result<(
 /// Verify all model and voice metadata assets beside the application executable.
 pub(crate) fn verify_private_tts_pack(job: &Job) -> Result<String> {
     let (root, pack) = verify_pack_at(&executable_root()?, job)?;
-    let _ = read_bounded(&root.join("MODEL_CARD"), MAX_MANIFEST_BYTES)?;
+    let _ = read_bounded(&root.join("MODEL_CARD.md"), MAX_MANIFEST_BYTES)?;
     Ok(format!(
-        "Verified {} English single-speaker model assets ({})",
+        "Verified {} offline English model and eight-voice assets ({})",
         pack.id, pack.version
     ))
 }
@@ -174,8 +188,28 @@ pub(crate) fn verify_private_tts_pack(job: &Job) -> Result<String> {
 #[serde(deny_unknown_fields)]
 pub(crate) struct TtsRequest {
     pub(crate) text: String,
+    #[serde(default = "default_voice")]
+    pub(crate) voice: String,
     #[serde(default = "default_speed")]
     pub(crate) speed: f32,
+}
+
+fn default_voice() -> String {
+    "Jasper".into()
+}
+
+fn speaker_id(voice: &str) -> Option<i32> {
+    match voice {
+        "Jasper" => Some(0),
+        "Bella" => Some(1),
+        "Bruno" => Some(2),
+        "Luna" => Some(3),
+        "Hugo" => Some(4),
+        "Rosie" => Some(5),
+        "Leo" => Some(6),
+        "Kiki" => Some(7),
+        _ => None,
+    }
 }
 
 fn default_speed() -> f32 {
@@ -191,6 +225,11 @@ fn validate_request(request: &TtsRequest) -> Result<()> {
     }
     if request.text.contains('\0') {
         return Err(Error::input("TTS text contains a NUL character"));
+    }
+    if speaker_id(&request.voice).is_none() {
+        return Err(Error::input(
+            "Choose one of the eight voices in the offline Kitten pack",
+        ));
     }
     if !request.speed.is_finite() || !(0.75..=1.5).contains(&request.speed) {
         return Err(Error::input("Speech speed must be between 0.75 and 1.5"));
@@ -217,13 +256,17 @@ pub(crate) fn synthesize_file(
     }
     job.check()?;
     let (root, _) = verify_pack_at(&executable_root()?, job)?;
-    let model = root.join("en_US-ljspeech-medium.onnx");
+    let model = root.join("model.int8.onnx");
+    let voices = root.join("voices.bin");
     let tokens = root.join("tokens.txt");
+    let lexicon = root.join("lexicon.txt");
     let config = OfflineTtsConfig {
         model: OfflineTtsModelConfig {
-            vits: OfflineTtsVitsModelConfig {
+            kitten: OfflineTtsKittenModelConfig {
                 model: Some(model.to_string_lossy().into_owned()),
+                voices: Some(voices.to_string_lossy().into_owned()),
                 tokens: Some(tokens.to_string_lossy().into_owned()),
+                lexicon: Some(lexicon.to_string_lossy().into_owned()),
                 ..Default::default()
             },
             num_threads: 2,
@@ -236,26 +279,17 @@ pub(crate) fn synthesize_file(
     let engine = OfflineTts::create(&config)
         .ok_or_else(|| Error::engine("Could not initialize the private TTS engine"))?;
     job.check()?;
-    let phonemizer = EnglishPhonemizer::new().map_err(|error| {
-        Error::engine(format!("Could not initialize English phonemizer: {error}"))
-    })?;
-    let (phonemes, _) = phonemizer
-        .phonemize_with_prosody(&request.text)
-        .map_err(|error| Error::input(format!("Could not phonemize text: {error}")))?;
-    if phonemes.is_empty() {
-        return Err(Error::input("No pronounceable English text was found"));
-    }
     let exceeded_output_limit = Arc::new(AtomicBool::new(false));
     let callback_limit = Arc::clone(&exceeded_output_limit);
     let callback_progress = progress.clone();
     let callback_job = job.clone();
     let generation = GenerationConfig {
         speed: request.speed,
-        tokens: Some(vec![phonemes]),
+        sid: speaker_id(&request.voice).expect("voice was validated"),
         ..Default::default()
     };
     let generated = engine.generate_with_config(
-        "",
+        &request.text,
         &generation,
         Some(move |samples: &[f32], percent: f32| {
             let count = samples.len();
@@ -352,11 +386,13 @@ mod tests {
     fn tts_request_has_bounded_and_valid_speed_and_text() {
         let valid: TtsRequest = serde_json::from_str(r#"{"text":"Hello, world!"}"#).unwrap();
         assert_eq!(valid.speed, 1.0);
+        assert_eq!(valid.voice, "Jasper");
         validate_request(&valid).unwrap();
         for json in [
             r#"{"text":"  "}"#,
             r#"{"text":"Hi","speed":0.5}"#,
             r#"{"text":"Hi","speed":2.0}"#,
+            r#"{"text":"Hi","voice":"Unknown"}"#,
             r#"{"text":"Hi","extra":true}"#,
         ] {
             let parsed = serde_json::from_str::<TtsRequest>(json);
@@ -366,21 +402,42 @@ mod tests {
         }
         let long = TtsRequest {
             text: "x".repeat(MAX_TEXT_BYTES + 1),
+            voice: "Jasper".into(),
             speed: 1.0,
         };
         assert!(validate_request(&long).is_err());
     }
 
     #[test]
-    fn manifest_pins_the_voice_and_declares_four_verified_assets() {
+    fn eight_kitten_speaker_names_map_to_stable_speaker_ids() {
+        for (voice, sid) in [
+            ("Jasper", 0),
+            ("Bella", 1),
+            ("Bruno", 2),
+            ("Luna", 3),
+            ("Hugo", 4),
+            ("Rosie", 5),
+            ("Leo", 6),
+            ("Kiki", 7),
+        ] {
+            assert_eq!(speaker_id(voice), Some(sid));
+        }
+        assert_eq!(speaker_id("not a voice"), None);
+    }
+
+    #[test]
+    fn manifest_pins_the_voice_and_declares_all_licensed_assets() {
         let manifest = manifest().unwrap();
         assert_eq!(manifest.id, PACK_ID);
-        assert_eq!(manifest.version, "sherpa-onnx-2.0.3");
-        assert_eq!(manifest.files.len(), 4);
+        assert_eq!(
+            manifest.version,
+            "Kitten TTS Nano 0.8 int8 / sherpa-onnx 2.0.3"
+        );
+        assert_eq!(manifest.files.len(), 7);
         assert!(manifest
             .files
             .iter()
-            .any(|file| file.name == "en_US-ljspeech-medium.onnx"));
+            .any(|file| file.name == "model.int8.onnx"));
     }
 
     #[test]
@@ -389,14 +446,10 @@ mod tests {
         let app = dir.path();
         let model_dir = app.join("engines").join(PACK_ID);
         fs::create_dir_all(&model_dir).unwrap();
-        let fake = b"model fixture";
-        fs::write(model_dir.join("en_US-ljspeech-medium.onnx"), fake).unwrap();
-        fs::write(model_dir.join("tokens.txt"), b"tokens").unwrap();
-        fs::write(model_dir.join("MODEL_CARD"), b"card").unwrap();
-        fs::write(model_dir.join("en_US-ljspeech-medium.onnx.json"), b"config").unwrap();
         let mut manifest = manifest().unwrap();
         for file in &mut manifest.files {
-            let bytes = fs::read(model_dir.join(&file.name)).unwrap();
+            let bytes = format!("fixture:{}", file.name).into_bytes();
+            fs::write(model_dir.join(&file.name), &bytes).unwrap();
             file.size_bytes = bytes.len() as u64;
             file.sha256 = format!("{:x}", Sha256::digest(bytes));
         }
@@ -426,6 +479,12 @@ mod tests {
             id: PACK_ID.into(),
             version: "fixture".into(),
             engine_version: "2.0.3".into(),
+            model_revision: MODEL_REVISION.into(),
+            model_license: "Apache-2.0".into(),
+            voice_assets_license: "Apache-2.0 (same pinned upstream model repository)".into(),
+            lexicon_source_revision: CMUDICT_REVISION.into(),
+            lexicon_source_license: "BSD-style".into(),
+            lexicon_source_sha256: CMUDICT_SHA256.into(),
             source_archive_sha256: "0".repeat(64),
             source_archive_size_bytes: 1,
             files: vec![PackFile {

@@ -3040,20 +3040,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "piper-plus-g2p"
-version = "0.5.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce115711122cbc25e472d3ab1568deba8cb16557bc03f3943cb2cbf853245cd8"
-dependencies = [
- "quick-xml",
- "regex",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tracing",
-]
-
-[[package]]
 name = "pkg-config"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3824,7 +3810,6 @@ dependencies = [
  "iced",
  "localwright-core",
  "localwright-ui",
- "piper-plus-g2p",
  "rfd",
  "rodio",
  "serde",
