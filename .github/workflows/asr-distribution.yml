@@ -11,6 +11,14 @@ on:
         options:
           - whisper-tiny-en
           - whisper-tiny-multilingual
+      target_group:
+        description: Native targets to build
+        type: choice
+        required: true
+        default: all
+        options:
+          - all
+          - windows
 
 permissions:
   contents: read
@@ -70,6 +78,7 @@ jobs:
 
   portable-asr:
     name: ASR portable bundle (${{ matrix.target }})
+    if: ${{ inputs.target_group == 'all' || (inputs.target_group == 'windows' && contains(matrix.target, 'windows-msvc')) }}
     needs: model-pack
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 75

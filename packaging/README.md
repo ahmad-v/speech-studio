@@ -18,7 +18,7 @@ Windows MSI and EXE must use the same product identity and payload, separately v
 
 ## Optional speech model pack
 
-The [private Whisper model packs](../docs/WHISPER_MODEL_PACK.md) cover English Tiny and multilingual Tiny. A pinned-model artifact workflow can assemble an offline ZIP; `install_whisper_model_pack.py` verifies and installs it beside an ASR-enabled app without overwriting an existing pack. The separate manual ASR distribution workflow includes one selected model in unsigned native portable bundles for all five target architectures. It does not publish a release. Neither model binary is committed or downloaded by the application at inference time.
+The [private Whisper model packs](../docs/WHISPER_MODEL_PACK.md) cover English Tiny and multilingual Tiny. A pinned-model artifact workflow can assemble an offline ZIP; `install_whisper_model_pack.py` verifies and installs it beside an ASR-enabled app without overwriting an existing pack. The separate manual ASR distribution workflow includes one selected model in unsigned native portable bundles for all five target architectures, with an optional Windows-only retry selection. It does not publish a release. Neither model binary is committed or downloaded by the application at inference time.
 
 ## Portable CI previews
 
