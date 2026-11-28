@@ -67,7 +67,9 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"export-vtt",label:"Save WebVTT",hint:"Export an SRT file or edited SRT draft as plain-text WebVTT cues. Choose a new .vtt output."},
  Operation{id:"export-lrc",label:"Save LRC lyrics",hint:"Export cue start times and text to LRC. LRC has no cue end times; multiline text is joined with spaces."},
  #[cfg(feature="asr")]
- Operation{id:"transcribe",label:"Transcribe (experimental)",hint:"With audio-playback enabled, transcribe supported local audio after bounded mono conversion and resampling; ASR-only builds accept 16 kHz mono PCM16 WAV. Leave the parameter blank for private English Tiny or enter multilingual for private multilingual Tiny. CPU inference; review the transcript."}];
+ Operation{id:"transcribe",label:"Transcribe (experimental)",hint:"With audio-playback enabled, transcribe supported local audio after bounded mono conversion and resampling; ASR-only builds accept 16 kHz mono PCM16 WAV. Leave the parameter blank for private English Tiny or enter multilingual for private multilingual Tiny. CPU inference; review the transcript."},
+ #[cfg(feature="asr")]
+ Operation{id:"translate-to-english",label:"Translate speech to English (experimental)",hint:"Translate speech audio into English text with the verified offline multilingual Whisper Tiny pack. This does not translate arbitrary text or provide general language-to-language translation. With audio-playback enabled, supported audio is decoded and resampled; ASR-only builds accept 16 kHz mono PCM16 WAV. Enter multilingual as the parameter. Review the translated transcript; accuracy and language coverage are not validated."}];
 fn err(e: impl std::fmt::Display) -> Error {
     Error::input(e.to_string())
 }
@@ -1163,6 +1165,16 @@ fn model_bytes(parameter: &str) -> Result<(Vec<u8>, String)> {
 
 #[cfg(feature = "asr")]
 fn transcribe(samples: &[f32], parameter: &str, j: &Job) -> Result<Vec<Segment>> {
+    transcribe_mode(samples, parameter, false, j)
+}
+
+#[cfg(feature = "asr")]
+fn transcribe_mode(
+    samples: &[f32],
+    parameter: &str,
+    translate_to_english: bool,
+    j: &Job,
+) -> Result<Vec<Segment>> {
     use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
     j.check()?;
     if samples.iter().all(|s| s.abs() < 0.0001) {
@@ -1186,7 +1198,7 @@ fn transcribe(samples: &[f32], parameter: &str, j: &Job) -> Result<Vec<Segment>>
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
     params.set_print_special(false);
-    params.set_translate(false);
+    params.set_translate(translate_to_english);
     state
         .full(params, samples)
         .map_err(|e| Error::engine(e.to_string()))?;
@@ -1352,6 +1364,24 @@ pub(crate) fn transcribe_file(input: &Path, parameter: &str, job: &Job) -> Resul
     #[cfg(not(feature = "audio-playback"))]
     let samples = wav(input, job)?;
     transcribe(&samples, parameter, job)
+}
+
+#[cfg(feature = "asr")]
+pub(crate) fn translate_speech_to_english_file(
+    input: &Path,
+    parameter: &str,
+    job: &Job,
+) -> Result<Vec<Segment>> {
+    if parameter.trim() != "multilingual" {
+        return Err(Error::input(
+            "Speech-to-English translation requires the verified multilingual Whisper Tiny model; enter multilingual",
+        ));
+    }
+    #[cfg(feature = "audio-playback")]
+    let samples = decode_whisper_samples(read_bounded(input, 128 * 1024 * 1024)?.into(), job)?;
+    #[cfg(not(feature = "audio-playback"))]
+    let samples = wav(input, job)?;
+    transcribe_mode(&samples, parameter, true, job)
 }
 pub fn handle(r: Request, j: Job) -> Result<Outcome> {
     j.check()?;
@@ -1569,6 +1599,20 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
             out.warnings.push(
                 "WER/CER, silence robustness, and per-language recognition quality have not been measured. Cancellation is cooperative before/after native inference, not during it."
                     .into(),
+            );
+        }
+        #[cfg(feature = "asr")]
+        "translate-to-english" => {
+            let segments = translate_speech_to_english_file(&r.input, &r.parameter, &j)?;
+            let s = render(&segments);
+            parse(&s)?;
+            out.preview = format!(
+                "{} experimental translated segments; review before export",
+                segments.len()
+            );
+            out.draft = Some(s);
+            out.warnings.push(
+                "This Whisper mode translates speech audio to English only; it is not general text or language-to-language translation. Translation quality, silence robustness, and per-language accuracy have not been measured. Cancellation is cooperative before/after native inference, not during it.".into(),
             );
         }
         _ => return Err(Error::input("Unknown or unavailable operation")),
@@ -2089,6 +2133,18 @@ mod tests {
         assert_eq!(multilingual["cpu_threads"], 2);
         assert!(!multilingual["gpu_required"].as_bool().unwrap());
         assert_eq!(multilingual["runtime_ram_bytes"], serde_json::Value::Null);
+    }
+
+    #[cfg(feature = "asr")]
+    #[test]
+    fn speech_translation_requires_the_private_multilingual_model() {
+        let error = translate_speech_to_english_file(
+            Path::new("audio-that-must-not-be-opened.wav"),
+            "",
+            &Job::new(),
+        )
+        .unwrap_err();
+        assert!(error.message.contains("multilingual Whisper Tiny"));
     }
 
     #[cfg(feature = "asr")]
