@@ -26,6 +26,23 @@ fn main() {
             std::process::exit(2);
         }
     }
+    if args.first().map(String::as_str) == Some("--translate-text") {
+        #[cfg(all(feature = "gui", feature = "translation"))]
+        {
+            if let Err(error) = speech_studio::translation_ui::run() {
+                eprintln!("{error}");
+                std::process::exit(1);
+            }
+            return;
+        }
+        #[cfg(not(all(feature = "gui", feature = "translation")))]
+        {
+            eprintln!(
+                "The native text-translation workspace requires GUI and translation features"
+            );
+            std::process::exit(2);
+        }
+    }
     #[cfg(feature = "gui")]
     if let Err(e) = localwright_ui::run_with_saved_appearance(
         "Speech Studio",

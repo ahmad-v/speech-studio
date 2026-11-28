@@ -306,6 +306,19 @@ impl State {
 
     fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            #[cfg(feature = "translation")]
+            Message::OpenTextTranslation => {
+                let launched = std::env::current_exe().and_then(|executable| {
+                    std::process::Command::new(executable)
+                        .arg("--translate-text")
+                        .spawn()
+                });
+                self.notice = match launched {
+                    Ok(_) => "Opened the separate offline English-to-French translation workspace."
+                        .into(),
+                    Err(error) => format!("Could not open the text-translation workspace: {error}"),
+                };
+            }
             Message::OpenDialog => {
                 return Task::perform(
                     async {
@@ -1129,6 +1142,17 @@ impl State {
                     text("Local processing · playback and recording use host audio devices"),
                 ]
                 .spacing(18);
+                #[cfg(feature = "translation")]
+                let controls = controls.push(
+                    row![
+                        button("Open English → French text translation…")
+                            .on_press(Message::OpenTextTranslation),
+                        text("Requires the separately installed verified offline model pack."),
+                    ]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center)
+                    .wrap(),
+                );
                 #[cfg(feature = "asr")]
                 let controls = controls.push(asr_controls);
                 #[cfg(feature = "tts")]
@@ -1253,6 +1277,8 @@ fn tts_task(
 
 #[derive(Debug, Clone)]
 enum Message {
+    #[cfg(feature = "translation")]
+    OpenTextTranslation,
     OpenDialog,
     FilePicked(Option<PathBuf>),
     RecordDialog,

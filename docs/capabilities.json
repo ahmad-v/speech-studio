@@ -399,6 +399,20 @@
       "status": "implemented-unverified",
       "targets": [],
       "fixture_status": "Hash/manifest unit tests and deterministic pack assembly tests are being updated; hosted verification and clean-pack inference smoke remain outstanding."
+    },
+    {
+      "operation": "translate-text-en-fr",
+      "description": "Editable native English-to-French text translation with Candle Marian inference and a separate hash-verified offline OPUS-MT pack; bounded input/output and cancellation between generated tokens",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "Bounded headless Rust check passes; 3 packer safety tests pass. Actual model-backed offline inference, GUI compilation and translation-quality validation are pending."
+    },
+    {
+      "operation": "verify-translation-pack",
+      "description": "Check the application-relative OPUS-MT model, config, SentencePiece vocabularies, model card, Apache license and third-party notice against exact pinned hashes",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "Packer tests cover manifest agreement, changed-asset rejection, unsafe archive rejection, verified extraction and no-overwrite behavior. The real 301 MB pack has not yet been assembled or run."
     }
   ]
 }
