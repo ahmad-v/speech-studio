@@ -4,13 +4,15 @@ use crate::recording::{enumerate_inputs, start_capture, CaptureSession, InputDev
 use crate::{
     audio_model::{
         active_cue, clamp_seek, decode_workspace_project, encode_workspace_project, format_time,
-        transport_action, waveform_seek, CueHistory, DecodedWorkspaceProject, TransportAction,
+        matching_cue_indices, transport_action, waveform_seek, CueHistory, DecodedWorkspaceProject,
+        TransportAction,
     },
     load_playback_clip, open_audio_decoder, parse_stamp, stamp, PlaybackClip, Segment,
 };
 use iced::{
     widget::{
-        button, canvas, column, container, pick_list, row, scrollable, slider, text, text_input,
+        button, canvas, column, container, pick_list, row, scrollable, slider, text, text_editor,
+        text_input,
     },
     Color, Element, Length, Point, Rectangle, Renderer, Subscription, Task, Theme,
 };
@@ -172,6 +174,9 @@ struct State {
     page_start: usize,
     cue_start_text: String,
     cue_end_text: String,
+    cue_text: text_editor::Content,
+    find_text: String,
+    replacement_text: String,
     linked_audio: Option<PathBuf>,
     notice: String,
 }
@@ -204,6 +209,9 @@ impl State {
                 page_start: 0,
                 cue_start_text: String::new(),
                 cue_end_text: String::new(),
+                cue_text: text_editor::Content::new(),
+                find_text: String::new(),
+                replacement_text: String::new(),
                 linked_audio: None,
                 notice: String::new(),
             },
@@ -297,6 +305,9 @@ impl State {
                     self.page_start = 0;
                     self.cue_start_text.clear();
                     self.cue_end_text.clear();
+                    self.cue_text = text_editor::Content::new();
+                    self.find_text.clear();
+                    self.replacement_text.clear();
                     self.notice = if let Some(audio) = &self.linked_audio {
                         format!(
                             "Loaded {count} cues. Linked audio is available at {}",
@@ -347,12 +358,15 @@ impl State {
             }
             Message::SelectCue(index) => {
                 if let Some(cue) = self.cues.cues().get(index) {
-                    let (start, end) = (cue.start, cue.end);
+                    let (start, end, text) = (cue.start, cue.end, cue.text.clone());
                     self.notice.clear();
                     self.selected_cue = Some(index);
-                    self.page_start = index / CUES_PER_PAGE * CUES_PER_PAGE;
+                    if self.find_text.is_empty() {
+                        self.page_start = index / CUES_PER_PAGE * CUES_PER_PAGE;
+                    }
                     self.cue_start_text = stamp(start);
                     self.cue_end_text = stamp(end);
+                    self.cue_text = text_editor::Content::with_text(&text);
                     self.send(Command::Seek(start));
                 }
             }
@@ -360,12 +374,61 @@ impl State {
                 self.page_start = self.page_start.saturating_sub(CUES_PER_PAGE);
             }
             Message::CuePageNext => {
-                if self.page_start + CUES_PER_PAGE < self.cues.cues().len() {
+                let matching_count = matching_cue_indices(self.cues.cues(), &self.find_text).len();
+                if self.page_start + CUES_PER_PAGE < matching_count {
                     self.page_start += CUES_PER_PAGE;
                 }
             }
             Message::CueStartChanged(value) => self.cue_start_text = value,
             Message::CueEndChanged(value) => self.cue_end_text = value,
+            Message::CueTextAction(action) => self.cue_text.perform(action),
+            Message::ApplyCueText => {
+                if let Some(index) = self.selected_cue {
+                    let text = self.cue_text.text();
+                    match self.cues.set_text(index, &text) {
+                        Ok(()) => self.notice = "Cue text updated.".into(),
+                        Err(error) => {
+                            self.cue_text =
+                                text_editor::Content::with_text(&self.cues.cues()[index].text);
+                            self.notice = format!("Cue text was not changed: {error}");
+                        }
+                    }
+                } else {
+                    self.notice = "Select a cue before editing its text.".into();
+                }
+            }
+            Message::FindTextChanged(value) => {
+                self.find_text = value;
+                self.page_start = 0;
+            }
+            Message::ReplacementTextChanged(value) => self.replacement_text = value,
+            Message::ReplaceSelected => {
+                let result = self.cues.replace_text(
+                    self.selected_cue,
+                    &self.find_text,
+                    &self.replacement_text,
+                );
+                match result {
+                    Ok(count) => {
+                        self.refresh_selected_cue();
+                        self.notice =
+                            format!("Replaced {count} occurrence(s) in the selected cue.");
+                    }
+                    Err(error) => self.notice = format!("Text was not replaced: {error}"),
+                }
+            }
+            Message::ReplaceAll => {
+                match self
+                    .cues
+                    .replace_text(None, &self.find_text, &self.replacement_text)
+                {
+                    Ok(count) => {
+                        self.refresh_selected_cue();
+                        self.notice = format!("Replaced {count} occurrence(s) in the transcript.");
+                    }
+                    Err(error) => self.notice = format!("Text was not replaced: {error}"),
+                }
+            }
             Message::ApplyCueTiming => {
                 if let Some(index) = self.selected_cue {
                     let timing = parse_stamp(&self.cue_start_text)
@@ -390,17 +453,17 @@ impl State {
             Message::UndoCueTiming => {
                 self.notice = if self.cues.undo() {
                     self.refresh_selected_timing();
-                    "Cue timing edit undone.".into()
+                    "Transcript edit undone.".into()
                 } else {
-                    "No cue timing edit to undo.".into()
+                    "No transcript edit to undo.".into()
                 };
             }
             Message::RedoCueTiming => {
                 self.notice = if self.cues.redo() {
                     self.refresh_selected_timing();
-                    "Cue timing edit redone.".into()
+                    "Transcript edit redone.".into()
                 } else {
-                    "No cue timing edit to redo.".into()
+                    "No transcript edit to redo.".into()
                 };
             }
             Message::Transport => {
@@ -432,10 +495,12 @@ impl State {
             }
             Message::Tick => {
                 self.view = lock_snapshot(&self.snapshot).clone();
-                if let Some(active) = active_cue(self.cues.cues(), self.view.position_ms) {
-                    let page_start = active / CUES_PER_PAGE * CUES_PER_PAGE;
-                    if page_start != self.page_start {
-                        self.page_start = page_start;
+                if self.find_text.is_empty() {
+                    if let Some(active) = active_cue(self.cues.cues(), self.view.position_ms) {
+                        let page_start = active / CUES_PER_PAGE * CUES_PER_PAGE;
+                        if page_start != self.page_start {
+                            self.page_start = page_start;
+                        }
                     }
                 }
             }
@@ -456,7 +521,12 @@ impl State {
         {
             self.cue_start_text = stamp(cue.start);
             self.cue_end_text = stamp(cue.end);
+            self.cue_text = text_editor::Content::with_text(&cue.text);
         }
+    }
+
+    fn refresh_selected_cue(&mut self) {
+        self.refresh_selected_timing();
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -481,15 +551,20 @@ impl State {
         .height(Length::Fixed(160.0));
         let cues = self.cues.cues();
         let active = active_cue(cues, self.view.position_ms);
-        let cue_rows = cues
+        let matching_indices = matching_cue_indices(cues, &self.find_text);
+        let visible_cues = matching_indices
             .iter()
-            .enumerate()
             .skip(self.page_start)
             .take(CUES_PER_PAGE)
-            .map(|(index, cue)| {
-                let marker = if active == Some(index) {
+            .copied()
+            .collect::<Vec<_>>();
+        let cue_rows = visible_cues
+            .iter()
+            .map(|index| {
+                let cue = &cues[*index];
+                let marker = if active == Some(*index) {
                     "▶"
-                } else if self.selected_cue == Some(index) {
+                } else if self.selected_cue == Some(*index) {
                     "●"
                 } else {
                     " "
@@ -497,24 +572,35 @@ impl State {
                 let cue_text = cue.text.chars().take(120).collect::<String>();
                 button(text(format!(
                     "{marker} {:>4}  {}–{}  {cue_text}",
-                    index + 1,
+                    *index + 1,
                     format_time(cue.start),
                     format_time(cue.end),
                 )))
                 .width(Length::Fill)
-                .on_press(Message::SelectCue(index))
+                .on_press(Message::SelectCue(*index))
                 .into()
             })
             .collect::<Vec<Element<'_, Message>>>();
         let cue_list = scrollable(column(cue_rows).spacing(4)).height(Length::Fixed(240.0));
-        let visible_end = (self.page_start + CUES_PER_PAGE).min(cues.len());
-        let visible_range = if cues.is_empty() {
-            "No transcript loaded".into()
+        let visible_end = (self.page_start + visible_cues.len()).min(matching_indices.len());
+        let visible_range = if matching_indices.is_empty() {
+            if cues.is_empty() {
+                "No transcript loaded".into()
+            } else {
+                "No cues match this search".into()
+            }
+        } else if !self.find_text.is_empty() {
+            format!(
+                "Matches {}–{visible_end} of {} filtered cues ({} total)",
+                self.page_start + 1,
+                matching_indices.len(),
+                cues.len(),
+            )
         } else {
             format!(
                 "Cues {}–{visible_end} of {}",
                 self.page_start + 1,
-                cues.len()
+                matching_indices.len()
             )
         };
         scrollable(
@@ -544,6 +630,14 @@ impl State {
                     ]
                     .spacing(4),
                     row![
+                        text_input("Filter transcript cues / find text", &self.find_text)
+                            .on_input(Message::FindTextChanged),
+                        text(visible_range.clone()),
+                    ]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center)
+                    .wrap(),
+                    row![
                         text(format!(
                             "Transcript: {} cues · active cue {}",
                             cues.len(),
@@ -567,9 +661,8 @@ impl State {
                         button("‹ Cues").on_press_maybe(
                             (self.page_start > 0).then_some(Message::CuePagePrevious)
                         ),
-                        text(visible_range),
                         button("Cues ›").on_press_maybe(
-                            (self.page_start + CUES_PER_PAGE < cues.len())
+                            (self.page_start + CUES_PER_PAGE < matching_indices.len())
                                 .then_some(Message::CuePageNext)
                         ),
                     ]
@@ -577,6 +670,25 @@ impl State {
                     .align_y(iced::Alignment::Center)
                     .wrap(),
                     cue_list,
+                    text("Selected cue text (multi-line)").size(16),
+                    text_editor(&self.cue_text)
+                        .placeholder("Select a cue to edit its text")
+                        .height(Length::Fixed(120.0))
+                        .on_action(Message::CueTextAction),
+                    button("Apply cue text")
+                        .on_press_maybe(self.selected_cue.map(|_| Message::ApplyCueText)),
+                    row![
+                        text_input("Replace with", &self.replacement_text)
+                            .on_input(Message::ReplacementTextChanged),
+                        button("Replace selected")
+                            .on_press_maybe(self.selected_cue.map(|_| Message::ReplaceSelected)),
+                        button("Replace all")
+                            .on_press_maybe((!self.find_text.is_empty()).then_some(Message::ReplaceAll)),
+                    ]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center)
+                    .wrap(),
+                    text("Search and replace are case-sensitive literal text operations. Find filters the cue list; all edits preserve cue times and support Undo/Redo."),
                     row![
                         text("Selected cue start"),
                         text_input("HH:MM:SS,mmm", &self.cue_start_text)
@@ -677,6 +789,12 @@ enum Message {
     CuePageNext,
     CueStartChanged(String),
     CueEndChanged(String),
+    CueTextAction(text_editor::Action),
+    ApplyCueText,
+    FindTextChanged(String),
+    ReplacementTextChanged(String),
+    ReplaceSelected,
+    ReplaceAll,
     ApplyCueTiming,
     UndoCueTiming,
     RedoCueTiming,
