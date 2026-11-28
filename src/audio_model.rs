@@ -1,4 +1,5 @@
 use crate::{parse, render, Segment, Transcript};
+use std::path::PathBuf;
 
 const MAX_HISTORY: usize = 20;
 const MAX_CUES: usize = 20_000;
@@ -90,16 +91,57 @@ pub(crate) fn active_cue(cues: &[Segment], position_ms: u64) -> Option<usize> {
 }
 
 pub(crate) fn decode_project(bytes: &[u8], is_json: bool) -> Result<Vec<Segment>, String> {
-    let cues = if is_json {
-        let project: Transcript =
+    decode_workspace_project(bytes, is_json).map(|project| project.segments)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct DecodedWorkspaceProject {
+    pub(crate) segments: Vec<Segment>,
+    pub(crate) audio_path: Option<PathBuf>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkspaceProjectV2 {
+    schema_version: u32,
+    segments: Vec<Segment>,
+    #[serde(default)]
+    audio_path: Option<String>,
+}
+
+pub(crate) fn decode_workspace_project(
+    bytes: &[u8],
+    is_json: bool,
+) -> Result<DecodedWorkspaceProject, String> {
+    let (cues, audio_path) = if is_json {
+        let header: serde_json::Value =
             serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
-        if project.schema_version != 1 {
-            return Err("Unsupported transcript project version".into());
+        match header
+            .get("schema_version")
+            .and_then(serde_json::Value::as_u64)
+        {
+            Some(1) => {
+                let project: Transcript =
+                    serde_json::from_value(header).map_err(|error| error.to_string())?;
+                (project.segments, None)
+            }
+            Some(2) => {
+                let project: WorkspaceProjectV2 =
+                    serde_json::from_value(header).map_err(|error| error.to_string())?;
+                if project.schema_version != 2 {
+                    return Err("Unsupported audio workspace project version".into());
+                }
+                let audio_path = project
+                    .audio_path
+                    .map(|path| validate_relative_audio_path(&path).map(PathBuf::from))
+                    .transpose()?;
+                (project.segments, audio_path)
+            }
+            _ => return Err("Unsupported transcript project version".into()),
         }
-        project.segments
     } else {
         let source = std::str::from_utf8(bytes).map_err(|error| error.to_string())?;
-        parse(source).map_err(|error| error.message)?
+        (parse(source).map_err(|error| error.message)?, None)
     };
     if cues.len() > MAX_CUES || cues.is_empty() {
         return Err("Project must contain between 1 and 20,000 cues".into());
@@ -108,7 +150,10 @@ pub(crate) fn decode_project(bytes: &[u8], is_json: bool) -> Result<Vec<Segment>
     if parse(&draft).map_err(|error| error.message)? != cues {
         return Err("Transcript project does not round trip through SRT".into());
     }
-    Ok(cues)
+    Ok(DecodedWorkspaceProject {
+        segments: cues,
+        audio_path,
+    })
 }
 
 pub(crate) fn encode_project(cues: &[Segment]) -> Result<Vec<u8>, String> {
@@ -124,6 +169,49 @@ pub(crate) fn encode_project(cues: &[Segment]) -> Result<Vec<u8>, String> {
         segments: cues.to_vec(),
     })
     .map_err(|error| error.to_string())
+}
+
+pub(crate) fn encode_workspace_project(
+    cues: &[Segment],
+    audio_path: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    if cues.is_empty() || cues.len() > MAX_CUES {
+        return Err("Project must contain between 1 and 20,000 cues".into());
+    }
+    let draft = render(cues);
+    if parse(&draft).map_err(|error| error.message)? != cues {
+        return Err("Transcript project does not round trip through SRT".into());
+    }
+    if let Some(path) = audio_path {
+        validate_relative_audio_path(path)?;
+        #[derive(serde::Serialize)]
+        struct WorkspaceProject<'a> {
+            schema_version: u32,
+            audio_path: &'a str,
+            segments: &'a [Segment],
+        }
+        serde_json::to_vec_pretty(&WorkspaceProject {
+            schema_version: 2,
+            audio_path: path,
+            segments: cues,
+        })
+        .map_err(|error| error.to_string())
+    } else {
+        encode_project(cues)
+    }
+}
+
+fn validate_relative_audio_path(path: &str) -> Result<&str, String> {
+    let path = path.trim();
+    if path.is_empty()
+        || path.starts_with('/')
+        || path.starts_with('\\')
+        || path.as_bytes().get(1) == Some(&b':')
+        || path.contains('\0')
+    {
+        return Err("Linked audio path must be a nonempty relative path".into());
+    }
+    Ok(path)
 }
 
 pub(crate) struct CueHistory {
@@ -304,5 +392,38 @@ mod tests {
             decode_project(crate::render(&cues).as_bytes(), false).unwrap(),
             cues
         );
+    }
+
+    #[test]
+    fn audio_workspace_projects_roundtrip_relative_media_and_keep_legacy_json() {
+        let cues = crate::parse("1\n00:00:00,100 --> 00:00:01,000\nHello").unwrap();
+        let json = encode_workspace_project(&cues, Some("../media/interview.wav")).unwrap();
+        let project = decode_workspace_project(&json, true).unwrap();
+        assert_eq!(project.segments, cues);
+        assert_eq!(
+            project.audio_path,
+            Some(PathBuf::from("../media/interview.wav"))
+        );
+
+        let legacy = encode_project(&cues).unwrap();
+        let migrated = decode_workspace_project(&legacy, true).unwrap();
+        assert_eq!(migrated.segments, cues);
+        assert_eq!(migrated.audio_path, None);
+    }
+
+    #[test]
+    fn audio_workspace_projects_reject_absolute_or_unknown_media_fields() {
+        let cues = crate::parse("1\n00:00:00,100 --> 00:00:01,000\nHello").unwrap();
+        assert!(encode_workspace_project(&cues, Some("/home/user/audio.wav")).is_err());
+        assert!(decode_workspace_project(
+            br#"{"schema_version":2,"audio_path":"C:\\Users\\user\\audio.wav","segments":[{"start_ms":100,"end_ms":1000,"text":"Hello"}]}"#,
+            true,
+        )
+        .is_err());
+        assert!(decode_workspace_project(
+            br#"{"schema_version":2,"audio_path":"audio.wav","segments":[{"start_ms":100,"end_ms":1000,"text":"Hello"}],"unexpected":true}"#,
+            true,
+        )
+        .is_err());
     }
 }
