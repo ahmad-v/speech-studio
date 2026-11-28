@@ -83,9 +83,10 @@ jobs:
             "CMAKE_TOOLCHAIN_FILE=$(Join-Path $env:GITHUB_WORKSPACE '.github\cmake\ggml-portable.cmake')"
             "CC_aarch64_pc_windows_msvc=$clang"
             "CXX_aarch64_pc_windows_msvc=$clang"
-            # bindgen on this Windows ARM runner emits an incomplete
-            # whisper_full_params; use the crate's checked-in FFI bindings.
-            'WHISPER_DONT_GENERATE_BINDINGS=1'
+            # Make bindgen parse the same Windows ARM64 ABI that Cargo and
+            # clang-cl compile. Without this, whisper_full_params is emitted
+            # as an empty opaque type (size 1) instead of its 264-byte ABI.
+            'BINDGEN_EXTRA_CLANG_ARGS_aarch64_pc_windows_msvc=--target=aarch64-pc-windows-msvc'
           ) | ForEach-Object { $_ >> $env:GITHUB_ENV }
 
       - name: Disable runner-specific Whisper CPU instructions on Apple Silicon
