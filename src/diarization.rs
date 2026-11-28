@@ -24,6 +24,7 @@ const SEGMENTATION_MODEL: &str = "segmentation.int8.onnx";
 const EMBEDDING_MODEL: &str = "speaker-embedding.onnx";
 const MAX_AUDIO_SAMPLES: usize = 9_600_000; // 10 min at 16 kHz
 const MAX_SEGMENTS: usize = 100_000;
+const MAX_SPEAKERS: usize = 100;
 const MAX_MANIFEST_BYTES: u64 = 32 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
@@ -145,6 +146,24 @@ struct DiarizationSettings {
 
 fn default_threshold() -> f32 {
     0.5
+}
+
+fn dense_speaker_indexes(
+    raw_ids: impl IntoIterator<Item = i32>,
+) -> Result<std::collections::BTreeMap<i32, u32>> {
+    let ids: BTreeSet<i32> = raw_ids.into_iter().collect();
+    if ids.len() > MAX_SPEAKERS || ids.iter().any(|id| *id < 0 || *id as usize >= MAX_SPEAKERS) {
+        return Err(Error::input("Diarization returned an invalid speaker ID"));
+    }
+    Ok(ids
+        .into_iter()
+        .enumerate()
+        .map(|(index, raw_id)| (raw_id, index as u32))
+        .collect())
+}
+
+fn valid_confidence(score: f32) -> Option<f32> {
+    (score.is_finite() && (-1.0..=1.0).contains(&score)).then_some(score)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -394,12 +413,22 @@ pub fn diarize_samples(
         .process(samples)
         .ok_or_else(|| Error::input("Offline speaker diarization inference failed"))?;
     job.check()?;
-    let speaker_count = u32::try_from(result.num_speakers())
+    let reported_speaker_count = u32::try_from(result.num_speakers())
         .map_err(|_| Error::input("Diarization returned an invalid speaker count"))?;
+    if reported_speaker_count as usize > MAX_SPEAKERS {
+        return Err(Error::input("Diarization returned more than 100 speakers"));
+    }
     let raw = result.sort_by_start_time();
     if raw.len() > MAX_SEGMENTS {
         return Err(Error::input("Diarization returned too many speaker turns"));
     }
+    // sherpa reports the number of distinct emitted speaker IDs. After its
+    // minimum-duration filtering those IDs need not be dense: a recording may
+    // contain speaker_1 turns but no surviving speaker_0 turns. Remap the IDs
+    // found in actual turns to stable dense indexes rather than rejecting a
+    // valid sparse result based on `num_speakers()`.
+    let speaker_indexes = dense_speaker_indexes(raw.iter().map(|turn| turn.speaker))?;
+    let speaker_count = speaker_indexes.len() as u32;
     let duration_ms = (samples.len() as u64 * 1000) / sample_rate_hz as u64;
     let mut turns = Vec::with_capacity(raw.len());
     for turn in raw {
@@ -409,21 +438,27 @@ pub fn diarize_samples(
             || turn.start < 0.0
             || turn.end <= turn.start
             || turn.speaker < 0
-            || turn.speaker as u32 >= speaker_count
-            || !turn.confidence.is_finite()
+            || turn.speaker as usize >= MAX_SPEAKERS
         {
-            return Err(Error::input(
-                "Diarization returned an invalid speaker segment",
-            ));
+            return Err(Error::input(format!(
+                "Diarization returned an invalid segment (start={}, end={}, speaker_id={})",
+                turn.start, turn.end, turn.speaker
+            )));
         }
-        let start_ms = (turn.start as f64 * 1000.0).round() as u64;
+        let raw_speaker_index = *speaker_indexes
+            .get(&turn.speaker)
+            .ok_or_else(|| Error::input("Diarization returned an unmapped speaker ID"))?;
+        let start_ms = ((turn.start as f64 * 1000.0).round() as u64).min(duration_ms);
         let end_ms = ((turn.end as f64 * 1000.0).round() as u64).min(duration_ms);
         if end_ms > start_ms {
             turns.push(SpeakerTurn {
                 start_ms,
                 end_ms,
-                speaker_index: turn.speaker as u32,
-                confidence: (turn.confidence >= 0.0).then_some(turn.confidence),
+                speaker_index: raw_speaker_index,
+                // sherpa uses -2 as its documented "unavailable" sentinel;
+                // non-finite or out-of-range backend scores also mean unknown,
+                // not that the otherwise valid speaker turn should be lost.
+                confidence: valid_confidence(turn.confidence),
             });
         }
     }
@@ -619,6 +654,31 @@ pub fn reassign_cue_speaker(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sparse_backend_ids_are_remapped_to_dense_recording_local_ids() {
+        // sherpa's `num_speakers()` counts distinct emitted IDs; it does not
+        // guarantee that minimum-duration filtering leaves a dense ID range.
+        let map = dense_speaker_indexes([1, 1]).unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get(&1), Some(&0));
+
+        let map = dense_speaker_indexes([4, 1, 4]).unwrap();
+        assert_eq!(map.len(), 2);
+        assert_eq!(map.get(&1), Some(&0));
+        assert_eq!(map.get(&4), Some(&1));
+        assert!(dense_speaker_indexes([-1]).is_err());
+        assert!(dense_speaker_indexes([MAX_SPEAKERS as i32]).is_err());
+    }
+
+    #[test]
+    fn backend_confidence_sentinel_and_nonfinite_values_become_unknown() {
+        assert_eq!(valid_confidence(0.7), Some(0.7));
+        assert_eq!(valid_confidence(-2.0), None);
+        assert_eq!(valid_confidence(f32::NAN), None);
+        assert_eq!(valid_confidence(f32::INFINITY), None);
+        assert_eq!(valid_confidence(1.1), None);
+    }
 
     #[test]
     fn manifest_records_redistributable_models_and_asset_hashes() {
