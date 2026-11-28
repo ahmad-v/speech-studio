@@ -233,6 +233,16 @@ struct State {
     tts_busy: bool,
     #[cfg(feature = "tts")]
     tts_progress: Arc<AtomicUsize>,
+    #[cfg(feature = "tts")]
+    diarization_job: Job,
+    #[cfg(feature = "tts")]
+    diarization_busy: bool,
+    #[cfg(feature = "tts")]
+    diarized: Option<crate::diarization::DiarizedTranscript>,
+    #[cfg(feature = "tts")]
+    speaker_index_text: String,
+    #[cfg(feature = "tts")]
+    speaker_label_text: String,
 }
 
 impl State {
@@ -299,6 +309,16 @@ impl State {
                 tts_busy: false,
                 #[cfg(feature = "tts")]
                 tts_progress: Arc::new(AtomicUsize::new(0)),
+                #[cfg(feature = "tts")]
+                diarization_job: Job::new(),
+                #[cfg(feature = "tts")]
+                diarization_busy: false,
+                #[cfg(feature = "tts")]
+                diarized: None,
+                #[cfg(feature = "tts")]
+                speaker_index_text: String::new(),
+                #[cfg(feature = "tts")]
+                speaker_label_text: String::new(),
             },
             initial_task,
         )
@@ -331,6 +351,12 @@ impl State {
                 self.seek_value_ms = None;
                 self.linked_audio = None;
                 self.notice.clear();
+                #[cfg(feature = "tts")]
+                {
+                    self.diarization_job.cancel();
+                    self.diarization_busy = false;
+                    self.diarized = None;
+                }
                 if self.commands.send(Command::Open(path)).is_ok() {
                     self.view.loading = true;
                     self.view.message = "Reading and validating audio…".into();
@@ -500,6 +526,175 @@ impl State {
                 self.tts_job.cancel();
                 self.notice = "Speech synthesis cancellation requested.".into();
             }
+            #[cfg(feature = "tts")]
+            Message::DiarizeTranscript => {
+                if self.diarization_busy {
+                    self.notice = "Speaker diarization is already running.".into();
+                } else if self.cues.cues().is_empty() {
+                    self.notice = "Open a transcript before diarization.".into();
+                } else if let Some(path) = self.view.audio_path.clone() {
+                    if !path
+                        .extension()
+                        .is_some_and(|ext| ext.eq_ignore_ascii_case("wav"))
+                    {
+                        self.notice =
+                            "Diarization currently requires a 16 kHz mono PCM16 WAV.".into();
+                    } else {
+                        let job = Job::new();
+                        self.diarization_job = job.clone();
+                        self.diarization_busy = true;
+                        self.notice =
+                            "Verifying offline speaker models and diarizing audio…".into();
+                        return diarization_task(path, self.cues.cues().to_vec(), job);
+                    }
+                } else {
+                    self.notice = "Open an audio file before diarization.".into();
+                }
+            }
+            #[cfg(feature = "tts")]
+            Message::CancelDiarization => {
+                self.diarization_job.cancel();
+                self.notice = "Diarization cancellation requested; native inference checks after its bounded call.".into();
+            }
+            #[cfg(feature = "tts")]
+            Message::DiarizationFinished(result) => {
+                self.diarization_busy = false;
+                match result {
+                    Ok(document) => {
+                        if document.segments.len() != self.cues.cues().len() {
+                            self.diarized = None;
+                            self.notice =
+                                "Transcript changed while diarization ran; rerun the analysis."
+                                    .into();
+                            return Task::none();
+                        }
+                        self.speaker_index_text.clear();
+                        self.speaker_label_text.clear();
+                        self.notice = format!(
+                            "Diarization assigned recording-local labels for {} cues across {} speakers. Review and correct labels before use.",
+                            document.segments.iter().filter(|cue| cue.speaker_index.is_some()).count(),
+                            document.speaker_labels.len(),
+                        );
+                        self.diarized = Some(document);
+                    }
+                    Err(error) => self.notice = format!("Speaker diarization failed: {error}"),
+                }
+            }
+            #[cfg(feature = "tts")]
+            Message::SpeakerIndexChanged(value) => self.speaker_index_text = value,
+            #[cfg(feature = "tts")]
+            Message::SpeakerLabelChanged(value) => self.speaker_label_text = value,
+            #[cfg(feature = "tts")]
+            Message::RenameSpeaker => {
+                let Some(document) = self.diarized.as_mut() else {
+                    self.notice = "Run diarization before editing speaker labels.".into();
+                    return Task::none();
+                };
+                match self.speaker_index_text.trim().parse::<u32>() {
+                    Ok(index) => match crate::diarization::rename_speaker(
+                        document,
+                        index,
+                        &self.speaker_label_text,
+                    ) {
+                        Ok(()) => {
+                            self.notice = format!("Updated recording-local speaker {}.", index + 1)
+                        }
+                        Err(error) => {
+                            self.notice =
+                                format!("Speaker label was not changed: {}", error.message)
+                        }
+                    },
+                    Err(_) => self.notice = "Enter a zero-based speaker index.".into(),
+                }
+            }
+            #[cfg(feature = "tts")]
+            Message::AssignCueSpeaker => {
+                let Some(cue_index) = self.selected_cue else {
+                    self.notice = "Select a transcript cue to assign a speaker.".into();
+                    return Task::none();
+                };
+                let Some(document) = self.diarized.as_mut() else {
+                    self.notice = "Run diarization before assigning speakers.".into();
+                    return Task::none();
+                };
+                let speaker = if self.speaker_index_text.trim().is_empty() {
+                    None
+                } else {
+                    match self.speaker_index_text.trim().parse::<u32>() {
+                        Ok(index) => Some(index),
+                        Err(_) => {
+                            self.notice =
+                                "Enter a zero-based speaker index or leave it blank.".into();
+                            return Task::none();
+                        }
+                    }
+                };
+                match crate::diarization::reassign_cue_speaker(document, cue_index, speaker) {
+                    Ok(()) => self.notice = "Speaker assignment updated.".into(),
+                    Err(error) => {
+                        self.notice =
+                            format!("Speaker assignment was not changed: {}", error.message)
+                    }
+                }
+            }
+            #[cfg(feature = "tts")]
+            Message::SaveDiarizedTranscript => {
+                if self
+                    .diarized
+                    .as_ref()
+                    .is_none_or(|document| document.segments.len() != self.cues.cues().len())
+                {
+                    self.notice = "Run diarization before saving speaker labels.".into();
+                } else {
+                    return Task::perform(
+                        async {
+                            rfd::AsyncFileDialog::new()
+                                .set_title("Save speaker-labeled transcript")
+                                .add_filter("JSON diarized transcript", &["json"])
+                                .save_file()
+                                .await
+                                .map(|file| file.path().to_path_buf())
+                        },
+                        Message::DiarizedTranscriptPath,
+                    );
+                }
+            }
+            #[cfg(feature = "tts")]
+            Message::DiarizedTranscriptPath(Some(path)) => {
+                if !path
+                    .extension()
+                    .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+                {
+                    self.notice =
+                        "Choose a .json output path for the speaker-labeled transcript.".into();
+                    return Task::none();
+                }
+                if let Some(document) = self.diarized.as_mut() {
+                    if document.segments.len() == self.cues.cues().len() {
+                        for (speaker_cue, current) in
+                            document.segments.iter_mut().zip(self.cues.cues())
+                        {
+                            speaker_cue.start_ms = current.start;
+                            speaker_cue.end_ms = current.end;
+                            speaker_cue.text = current.text.clone();
+                        }
+                    }
+                    match serde_json::to_vec_pretty(document)
+                        .map_err(|error| error.to_string())
+                        .and_then(|bytes| write_bytes(&path, &bytes).map_err(|error| error.message))
+                    {
+                        Ok(()) => {
+                            self.notice =
+                                format!("Saved speaker-labeled transcript to {}", path.display())
+                        }
+                        Err(error) => {
+                            self.notice = format!("Could not save diarized transcript: {error}")
+                        }
+                    }
+                }
+            }
+            #[cfg(feature = "tts")]
+            Message::DiarizedTranscriptPath(None) => {}
             Message::RecordDialog => {
                 return Task::perform(
                     async {
@@ -543,6 +738,12 @@ impl State {
             }
             Message::TranscriptPicked(Some(path)) => match load_transcript(&path) {
                 Ok(project) => {
+                    #[cfg(feature = "tts")]
+                    {
+                        self.diarization_job.cancel();
+                        self.diarization_busy = false;
+                        self.diarized = None;
+                    }
                     let count = project.segments.len();
                     let crate::audio_model::DecodedWorkspaceProject {
                         segments,
@@ -623,6 +824,16 @@ impl State {
                     let (start, end, text) = (cue.start, cue.end, cue.text.clone());
                     self.notice.clear();
                     self.selected_cue = Some(index);
+                    #[cfg(feature = "tts")]
+                    {
+                        self.speaker_index_text = self
+                            .diarized
+                            .as_ref()
+                            .and_then(|document| document.segments.get(index))
+                            .and_then(|cue| cue.speaker_index)
+                            .map(|speaker| speaker.to_string())
+                            .unwrap_or_default();
+                    }
                     if self.find_text.is_empty() {
                         self.page_start = index / CUES_PER_PAGE * CUES_PER_PAGE;
                     }
@@ -862,8 +1073,23 @@ impl State {
                     " "
                 };
                 let cue_text = cue.text.chars().take(120).collect::<String>();
+                #[cfg(feature = "tts")]
+                let speaker = self
+                    .diarized
+                    .as_ref()
+                    .and_then(|document| document.segments.get(*index))
+                    .and_then(|cue| cue.speaker_index)
+                    .and_then(|speaker| {
+                        self.diarized
+                            .as_ref()
+                            .and_then(|document| document.speaker_labels.get(speaker as usize))
+                    })
+                    .map(|label| format!("[{label}] "))
+                    .unwrap_or_default();
+                #[cfg(not(feature = "tts"))]
+                let speaker = String::new();
                 button(text(format!(
-                    "{marker} {:>4}  {}–{}  {cue_text}",
+                    "{marker} {:>4}  {}–{}  {speaker}{cue_text}",
                     *index + 1,
                     format_time(cue.start),
                     format_time(cue.end),
@@ -977,6 +1203,29 @@ impl State {
                     .on_press_maybe(if self.tts_busy { Some(Message::CancelTts) } else if !self.tts_text.trim().is_empty() { Some(Message::GenerateSpeech) } else { None }),
             ].spacing(8).align_y(iced::Alignment::Center).wrap(),
             text(format!("Synthesis progress: {}% · Requires the separately installed offline voice pack. New WAV output never replaces an existing file.", self.tts_progress.load(Ordering::Relaxed))),
+        ].spacing(8);
+
+        #[cfg(feature = "tts")]
+        let diarization_controls = column![
+            text("Offline speaker diarization · labels are recording-local, not identity recognition"),
+            row![
+                button(if self.diarization_busy { "Cancel diarization" } else { "Diarize loaded WAV" })
+                    .on_press_maybe(if self.diarization_busy { Some(Message::CancelDiarization) } else if self.view.loaded && !cues.is_empty() { Some(Message::DiarizeTranscript) } else { None }),
+                button("Save speaker-labeled JSON…")
+                    .on_press_maybe(self.diarized.as_ref().is_some_and(|document| document.segments.len() == cues.len()).then_some(Message::SaveDiarizedTranscript)),
+                text(self.diarized.as_ref().map_or_else(|| "Model pack status: requires verified offline speaker pack".to_owned(), |document| format!("{} speaker labels", document.speaker_labels.len()))),
+            ].spacing(8).align_y(iced::Alignment::Center).wrap(),
+            row![
+                text("Selected cue speaker (zero-based; blank clears)"),
+                text_input("index", &self.speaker_index_text).on_input(Message::SpeakerIndexChanged),
+                button("Assign cue").on_press_maybe(self.selected_cue.map(|_| Message::AssignCueSpeaker)),
+            ].spacing(8).align_y(iced::Alignment::Center).wrap(),
+            row![
+                text("Rename speaker by index"),
+                text_input("index", &self.speaker_index_text).on_input(Message::SpeakerIndexChanged),
+                text_input("label", &self.speaker_label_text).on_input(Message::SpeakerLabelChanged),
+                button("Rename").on_press_maybe(self.diarized.is_some().then_some(Message::RenameSpeaker)),
+            ].spacing(8).align_y(iced::Alignment::Center).wrap(),
         ].spacing(8);
 
         scrollable(
@@ -1133,6 +1382,8 @@ impl State {
                 let controls = controls.push(asr_controls);
                 #[cfg(feature = "tts")]
                 let controls = controls.push(tts_controls);
+                #[cfg(feature = "tts")]
+                let controls = controls.push(diarization_controls);
                 controls
             })
             .width(Length::Fill)
@@ -1152,6 +1403,8 @@ impl Drop for State {
     fn drop(&mut self) {
         #[cfg(feature = "tts")]
         self.tts_job.cancel();
+        #[cfg(feature = "tts")]
+        self.diarization_job.cancel();
         #[cfg(feature = "asr")]
         self.transcription_job.cancel();
         #[cfg(feature = "asr")]
@@ -1251,6 +1504,22 @@ fn tts_task(
     )
 }
 
+#[cfg(feature = "tts")]
+fn diarization_task(path: PathBuf, cues: Vec<Segment>, job: Job) -> Task<Message> {
+    Task::perform(
+        async move {
+            thread::spawn(move || {
+                crate::diarization::diarize_cues(&path, &cues, &job).map_err(|error| error.message)
+            })
+            .join()
+            .unwrap_or_else(|_| {
+                Err("Offline speaker diarization worker stopped unexpectedly".into())
+            })
+        },
+        Message::DiarizationFinished,
+    )
+}
+
 #[derive(Debug, Clone)]
 enum Message {
     OpenDialog,
@@ -1313,6 +1582,24 @@ enum Message {
     TtsFinished(PathBuf, String, std::result::Result<usize, String>),
     #[cfg(feature = "tts")]
     CancelTts,
+    #[cfg(feature = "tts")]
+    DiarizeTranscript,
+    #[cfg(feature = "tts")]
+    CancelDiarization,
+    #[cfg(feature = "tts")]
+    DiarizationFinished(std::result::Result<crate::diarization::DiarizedTranscript, String>),
+    #[cfg(feature = "tts")]
+    SpeakerIndexChanged(String),
+    #[cfg(feature = "tts")]
+    SpeakerLabelChanged(String),
+    #[cfg(feature = "tts")]
+    RenameSpeaker,
+    #[cfg(feature = "tts")]
+    AssignCueSpeaker,
+    #[cfg(feature = "tts")]
+    SaveDiarizedTranscript,
+    #[cfg(feature = "tts")]
+    DiarizedTranscriptPath(Option<PathBuf>),
     Tick,
 }
 

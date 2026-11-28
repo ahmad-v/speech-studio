@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "id": "speaker-diarization-pyannote3-3dspeaker-v1",
+  "engine": "sherpa-onnx",
+  "engine_version": "2.0.3",
+  "segmentation_model": "pyannote/segmentation-3.0 int8 ONNX",
+  "segmentation_license": "MIT",
+  "segmentation_source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2; converted from https://huggingface.co/pyannote/segmentation-3.0",
+  "embedding_model": "3D-Speaker ERes2Net-Base (Chinese/English speaker embedding)",
+  "embedding_license": "Apache-2.0",
+  "embedding_source": "https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx; source project: https://github.com/modelscope/3D-Speaker; source model: https://modelscope.cn/models/damo/speech_eres2net_base_sv_zh-cn_3dspeaker_16k/summary",
+  "segmentation_archive_size_bytes": 6958444,
+  "segmentation_archive_sha256": "24615ee884c897d9d2ba09bb4d30da6bb1b15e685065962db5b02e76e4996488",
+  "embedding_source_size_bytes": 39593762,
+  "embedding_source_sha256": "f1ee61be04000b50392a63442e5dd9feaea7e81dddd494d3647cf1c3d88a1498",
+  "training_data_note": "The embedding model source identifies the 3D-Speaker training corpus. Training data are not included in this pack; their license terms do not replace the separately documented Apache-2.0 model license.",
+  "sample_rate_hz": 16000,
+  "files": [
+    {
+      "name": "segmentation.int8.onnx",
+      "size_bytes": 1540506,
+      "sha256": "d582f4b4c6b48205de7e0643c57df0df5615a3c176189be3fc461e9d18827b5d"
+    },
+    {
+      "name": "speaker-embedding.onnx",
+      "size_bytes": 39593762,
+      "sha256": "f1ee61be04000b50392a63442e5dd9feaea7e81dddd494d3647cf1c3d88a1498"
+    },
+    {
+      "name": "LICENSE-pyannote-MIT",
+      "size_bytes": 1061,
+      "sha256": "14d7016ad68e7394d6e6b78d96cc2ae431c905287b89674cfdf021e79e62b8ba"
+    },
+    {
+      "name": "LICENSE-3dspeaker-Apache-2.0",
+      "size_bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "name": "MODEL-CARD.md",
+      "size_bytes": 2453,
+      "sha256": "8489d16ee1f2c6303e21e463e36fde902f8709c52568e3752495ed30a529adcb"
+    }
+  ],
+  "resource_requirements": {
+    "audio": "mono 16 kHz float samples, maximum 10 minutes per invocation",
+    "threads": 2,
+    "model_files_bytes": 41134268,
+    "peak_memory": "Not yet measured; do not infer from model file size."
+  }
+}

@@ -399,6 +399,34 @@
       "status": "implemented-unverified",
       "targets": [],
       "fixture_status": "Pack assembly, pinned asset/hash verification and offline inference smoke passed in Integration run 46177120953; extracted installed-bundle lifecycle remains unverified."
+    },
+    {
+      "operation": "verify-diarization-pack",
+      "description": "Verify application-relative pyannote and 3D-Speaker model assets and notices against pinned sizes and SHA-256 hashes",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "Model pack assembly and packaging safety tests passed; this session adds operation and native workspace integration. Hosted compile, installed-pack inference and reference quality checks pending."
+    },
+    {
+      "operation": "diarize-speakers",
+      "description": "Run bounded offline sherpa-onnx speaker diarization on mono 16 kHz PCM16 WAV, up to ten minutes, and emit recording-local speaker turns",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "Engine and model adapters are present; actual installed-pack inference and reference corpus DER measurements pending."
+    },
+    {
+      "operation": "diarize-transcript",
+      "description": "Map detected speaker turns to transcript cues by maximum overlap and write a versioned speaker-labeled JSON document",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "Cue overlap, deterministic ties, unlabeled gaps, serialization, manual renaming and reassignment are unit-tested; native hosted compilation pending."
+    },
+    {
+      "operation": "edit-diarized-transcript",
+      "description": "Rename recording-local speaker labels and manually reassign or clear cue speaker indices while preserving source transcript text",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "Bounds and JSON round-trip fixtures pass; native application and hosted verification pending."
     }
   ]
 }

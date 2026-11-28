@@ -5,6 +5,8 @@ mod audio_model;
 #[cfg(all(feature = "gui", feature = "audio-playback"))]
 pub mod audio_ui;
 mod cue_edit;
+#[cfg(feature = "tts")]
+mod diarization;
 #[cfg(any(feature = "audio-playback", test))]
 mod recording;
 #[cfg(feature = "tts")]
@@ -30,6 +32,16 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"synthesize-speech",label:"Synthesize English speech",hint:"Synthesize English text offline with Kitten Nano. Enter JSON {\"text\":\"Hello\",\"voice\":\"Jasper\",\"speed\":1.0}; choose a new .wav output. Requires the separately installed, SHA-256 verified model pack. Eight English voices; not voice cloning."},
  #[cfg(feature="tts")]
  Operation{id:"verify-tts-pack",label:"Verify offline TTS voice pack",hint:"Verify the application-relative Kitten model, eight-voice data, tokens, CMUdict-derived lexicon, and notices against the pinned SHA-256 manifest. Leave input, output and parameter blank."},
+ #[cfg(feature="tts")]
+ Operation{id:"diarize-speakers",label:"Diarize speakers in WAV",hint:"Offline speaker diarization for mono 16 kHz PCM16 WAV up to 10 minutes. Requires the separately installed, hash-verified pyannote/3D-Speaker pack. Writes a new speaker-labeled transcript JSON; labels distinguish speakers only within this recording and should be reviewed."},
+ #[cfg(feature="tts")]
+ Operation{id:"diarize-transcript",label:"Apply speakers to transcript",hint:"Map offline diarization turns from a supported mono 16 kHz WAV onto an SRT transcript and write a separate speaker-labeled JSON. The separately installed model pack is required; review recording-local labels."},
+ #[cfg(feature="tts")]
+ Operation{id:"verify-diarization-pack",label:"Verify offline speaker model pack",hint:"Verify the application-relative pyannote segmentation and 3D-Speaker embedding files, licenses, manifest, sizes and SHA-256 values. Leave input, output and parameter blank."},
+ #[cfg(feature="tts")]
+ Operation{id:"rename-diarized-speaker",label:"Rename diarized speaker",hint:r#"Read a diarized transcript JSON and write a new JSON output. Parameter: {"speaker_index":0,"label":"Interviewer"}. Index is zero-based. This edits only the recording-local label."#},
+ #[cfg(feature="tts")]
+ Operation{id:"reassign-diarized-cue",label:"Reassign diarized cue",hint:r#"Read a diarized transcript JSON and write a new JSON output. Parameter: {"cue_index":0,"speaker_index":1}; set speaker_index to null to leave the cue unlabeled. Indices are zero-based."#},
  #[cfg(feature="audio-playback")]
  Operation{id:"play-wav",label:"Play local audio",hint:"Open and play local WAV, FLAC, MP3, OGG, AAC/M4A or AIFF audio (up to 8 channels, 8–192 kHz, 10 minutes, 128 MiB input and 256 MiB decoded memory). The separate native audio workspace also supports transcript cue selection, multi-line cue text editing, literal find/replace, timing edits, waveform seeking, and undo/redo. Leave output and parameter blank. Cancel stops playback. Format support depends on the bundled native decoders."},
  Operation{id:"detect-voice-activity",label:"Detect voice activity",hint:"Estimate active intervals from mono 16 kHz PCM16 WAV energy. Results are an energy heuristic, not neural VAD or diarization. Choose a new .json output."},
@@ -78,6 +90,17 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"translate-to-english",label:"Translate speech to English (experimental)",hint:"Translate speech audio into English text with the verified offline multilingual Whisper Tiny pack. This does not translate arbitrary text or provide general language-to-language translation. With audio-playback enabled, supported audio is decoded and resampled; ASR-only builds accept 16 kHz mono PCM16 WAV. Enter multilingual as the parameter. Review the translated transcript; accuracy and language coverage are not validated."}];
 fn err(e: impl std::fmt::Display) -> Error {
     Error::input(e.to_string())
+}
+#[cfg(feature = "tts")]
+fn require_json_output(path: &Path) -> Result<()> {
+    if !path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+    {
+        return Err(Error::input("Expected a new .json output path"));
+    }
+    Ok(())
 }
 fn wav(p: &Path, j: &Job) -> Result<Vec<f32>> {
     let bytes = read_bounded(p, 20 * 1024 * 1024)?;
@@ -1406,6 +1429,96 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
         "verify-tts-pack" => {
             out.preview = tts::verify_private_tts_pack(&j)?;
         }
+        #[cfg(feature = "tts")]
+        "verify-diarization-pack" => {
+            let paths = diarization::verify_installed_pack(&j)?;
+            out.preview = format!(
+                "Verified offline diarization pack at {}",
+                paths.root.display()
+            );
+        }
+        #[cfg(feature = "tts")]
+        "diarize-speakers" => {
+            require_json_output(&r.output)?;
+            let result = diarization::diarize_installed_wav(&r.input, &r.parameter, &j)?;
+            let bytes = serde_json::to_vec_pretty(&result)?;
+            write_bytes(&r.output, &bytes)?;
+            out.preview = format!(
+                "Detected {} recording-local speaker(s) across {} turns",
+                result.speaker_count,
+                result.turns.len()
+            );
+            out.warnings.push(result.limitations);
+            out.written = Some(r.output);
+        }
+        #[cfg(feature = "tts")]
+        "diarize-transcript" => {
+            require_json_output(&r.output)?;
+            if r.parameter.trim().is_empty() {
+                return Err(Error::input("Parameter must name an SRT transcript"));
+            }
+            let transcript = Path::new(r.parameter.trim());
+            let document = diarization::diarize_srt(&r.input, transcript, "", &j)?;
+            let labeled = document
+                .segments
+                .iter()
+                .filter(|segment| segment.speaker_index.is_some())
+                .count();
+            let bytes = serde_json::to_vec_pretty(&document)?;
+            write_bytes(&r.output, &bytes)?;
+            out.preview = format!(
+                "Labeled {labeled} of {} transcript cues across {} speaker(s)",
+                document.segments.len(),
+                document.speaker_labels.len()
+            );
+            out.warnings.push(document.limitations);
+            out.written = Some(r.output);
+        }
+        #[cfg(feature = "tts")]
+        "rename-diarized-speaker" | "reassign-diarized-cue" => {
+            require_json_output(&r.output)?;
+            let mut document: diarization::DiarizedTranscript =
+                serde_json::from_slice(&read_bounded(&r.input, 16 * 1024 * 1024)?)?;
+            diarization::validate_document(&document)?;
+            if r.operation == "rename-diarized-speaker" {
+                #[derive(serde::Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Rename {
+                    speaker_index: u32,
+                    label: String,
+                }
+                let edit: Rename = serde_json::from_str(&r.parameter)
+                    .map_err(|_| Error::input("Expected speaker_index and label JSON"))?;
+                diarization::rename_speaker(&mut document, edit.speaker_index, &edit.label)?;
+            } else {
+                #[derive(serde::Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Reassign {
+                    cue_index: usize,
+                    speaker_index: Option<u32>,
+                }
+                let edit: Reassign = serde_json::from_str(&r.parameter)
+                    .map_err(|_| Error::input("Expected cue_index and speaker_index JSON"))?;
+                diarization::reassign_cue_speaker(
+                    &mut document,
+                    edit.cue_index,
+                    edit.speaker_index,
+                )?;
+            }
+            diarization::validate_document(&document)?;
+            let bytes = serde_json::to_vec_pretty(&document)?;
+            if bytes.len() > 16 * 1024 * 1024 {
+                return Err(Error::input(
+                    "Edited diarized transcript exceeds the 16 MiB output limit",
+                ));
+            }
+            write_bytes(&r.output, &bytes)?;
+            out.preview = format!(
+                "Saved speaker labels for {} transcript cues",
+                document.segments.len()
+            );
+            out.written = Some(r.output);
+        }
         #[cfg(feature = "audio-playback")]
         "play-wav" => return play_wav(&r.input, &j),
         "prepare-wav" => {
@@ -1641,6 +1754,23 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "tts")]
+    #[test]
+    fn diarization_operations_are_registered_for_shared_workbench() {
+        for id in [
+            "verify-diarization-pack",
+            "diarize-speakers",
+            "diarize-transcript",
+            "rename-diarized-speaker",
+            "reassign-diarized-cue",
+        ] {
+            assert!(
+                OPERATIONS.iter().any(|operation| operation.id == id),
+                "missing {id}"
+            );
+        }
+    }
+
     #[cfg(all(feature = "asr", feature = "audio-playback"))]
     #[test]
     fn whisper_audio_decoder_downmixes_and_resamples_supported_wav_files() {
