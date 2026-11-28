@@ -3,8 +3,8 @@
 use crate::recording::{enumerate_inputs, start_capture, CaptureSession, InputDevice};
 use crate::{
     audio_model::{
-        active_cue, clamp_seek, decode_project, encode_project, format_time, transport_action,
-        waveform_seek, CueHistory, TransportAction,
+        active_cue, clamp_seek, decode_workspace_project, encode_workspace_project, format_time,
+        transport_action, waveform_seek, CueHistory, DecodedWorkspaceProject, TransportAction,
     },
     load_playback_clip, open_audio_decoder, parse_stamp, stamp, PlaybackClip, Segment,
 };
@@ -117,6 +117,7 @@ impl canvas::Program<Message> for Waveform<'_> {
 #[derive(Debug, Clone, Default)]
 struct Snapshot {
     file_name: String,
+    audio_path: Option<PathBuf>,
     waveform: Vec<f32>,
     duration_ms: u64,
     position_ms: u64,
@@ -171,6 +172,7 @@ struct State {
     page_start: usize,
     cue_start_text: String,
     cue_end_text: String,
+    linked_audio: Option<PathBuf>,
     notice: String,
 }
 
@@ -202,6 +204,7 @@ impl State {
                 page_start: 0,
                 cue_start_text: String::new(),
                 cue_end_text: String::new(),
+                linked_audio: None,
                 notice: String::new(),
             },
             Task::none(),
@@ -228,6 +231,7 @@ impl State {
             }
             Message::FilePicked(Some(path)) => {
                 self.seek_value_ms = None;
+                self.linked_audio = None;
                 self.notice.clear();
                 if self.commands.send(Command::Open(path)).is_ok() {
                     self.view.loading = true;
@@ -279,14 +283,28 @@ impl State {
                 );
             }
             Message::TranscriptPicked(Some(path)) => match load_transcript(&path) {
-                Ok(cues) => {
-                    let count = cues.len();
-                    self.cues = CueHistory::new(cues);
+                Ok(project) => {
+                    let count = project.segments.len();
+                    self.cues = CueHistory::new(project.segments);
+                    self.linked_audio = project.audio_path.map(|media| {
+                        if media.is_absolute() {
+                            media
+                        } else {
+                            path.parent().unwrap_or_else(|| Path::new(".")).join(media)
+                        }
+                    });
                     self.selected_cue = None;
                     self.page_start = 0;
                     self.cue_start_text.clear();
                     self.cue_end_text.clear();
-                    self.notice = format!("Loaded {count} transcript cues.");
+                    self.notice = if let Some(audio) = &self.linked_audio {
+                        format!(
+                            "Loaded {count} cues. Linked audio is available at {}",
+                            audio.display()
+                        )
+                    } else {
+                        format!("Loaded {count} transcript cues.")
+                    };
                 }
                 Err(error) => self.notice = format!("Could not open transcript: {error}"),
             },
@@ -304,11 +322,29 @@ impl State {
                     Message::ProjectSavePath,
                 );
             }
-            Message::ProjectSavePath(Some(path)) => match save_project(&path, self.cues.cues()) {
-                Ok(()) => self.notice = format!("Saved project to {}", path.display()),
-                Err(error) => self.notice = format!("Could not save project: {error}"),
-            },
+            Message::ProjectSavePath(Some(path)) => {
+                match save_project(&path, self.cues.cues(), self.view.audio_path.as_deref()) {
+                    Ok(()) => {
+                        self.linked_audio = self.view.audio_path.as_ref().and_then(|audio| {
+                            relative_media_path(&path, audio).ok().map(PathBuf::from)
+                        });
+                        self.notice = format!("Saved audio workspace project to {}", path.display())
+                    }
+                    Err(error) => self.notice = format!("Could not save project: {error}"),
+                }
+            }
             Message::ProjectSavePath(None) => {}
+            Message::LoadLinkedAudio => {
+                if let Some(path) = self.linked_audio.clone() {
+                    self.linked_audio = None;
+                    if self.commands.send(Command::Open(path)).is_ok() {
+                        self.view.loading = true;
+                        self.view.message = "Reading linked audio…".into();
+                    } else {
+                        self.view.message = "The audio worker has stopped.".into();
+                    }
+                }
+            }
             Message::SelectCue(index) => {
                 if let Some(cue) = self.cues.cues().get(index) {
                     let (start, end) = (cue.start, cue.end);
@@ -516,6 +552,9 @@ impl State {
                         button("Open SRT / project…").on_press(Message::OpenTranscript),
                         button("Save project…")
                             .on_press_maybe((!cues.is_empty()).then_some(Message::SaveProject)),
+                        button("Load linked audio").on_press_maybe(
+                            self.linked_audio.as_ref().map(|_| Message::LoadLinkedAudio)
+                        ),
                     ]
                     .spacing(10)
                     .align_y(iced::Alignment::Center)
@@ -630,6 +669,7 @@ enum Message {
     WaveformSeek(u64),
     OpenTranscript,
     TranscriptPicked(Option<PathBuf>),
+    LoadLinkedAudio,
     SaveProject,
     ProjectSavePath(Option<PathBuf>),
     SelectCue(usize),
@@ -643,16 +683,16 @@ enum Message {
     Tick,
 }
 
-fn load_transcript(path: &Path) -> Result<Vec<Segment>, String> {
+fn load_transcript(path: &Path) -> Result<DecodedWorkspaceProject, String> {
     let bytes = read_bounded(path, 16 * 1024 * 1024).map_err(|error| error.message)?;
     let is_json = path
         .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("json"));
-    decode_project(&bytes, is_json)
+    decode_workspace_project(&bytes, is_json)
 }
 
-fn save_project(path: &Path, cues: &[Segment]) -> Result<(), String> {
+fn save_project(path: &Path, cues: &[Segment], audio_path: Option<&Path>) -> Result<(), String> {
     if !path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -660,8 +700,50 @@ fn save_project(path: &Path, cues: &[Segment]) -> Result<(), String> {
     {
         return Err("Choose a .json project path".into());
     }
-    let bytes = encode_project(cues)?;
+    let relative_audio = audio_path
+        .map(|audio| relative_media_path(path, audio))
+        .transpose()?;
+    let bytes = encode_workspace_project(cues, relative_audio.as_deref())?;
     write_bytes(path, &bytes).map_err(|error| error.message)
+}
+
+fn relative_media_path(project_path: &Path, audio_path: &Path) -> Result<String, String> {
+    let project_dir = project_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let project_dir = std::fs::canonicalize(project_dir)
+        .map_err(|error| format!("Could not resolve project directory: {error}"))?;
+    let audio_path = std::fs::canonicalize(audio_path)
+        .map_err(|error| format!("Could not resolve linked audio: {error}"))?;
+    let from = project_dir.components().collect::<Vec<_>>();
+    let to = audio_path.components().collect::<Vec<_>>();
+    let common = from
+        .iter()
+        .zip(&to)
+        .take_while(|(left, right)| left == right)
+        .count();
+    if common == 0 {
+        return Err("Project and audio are on different filesystem roots; choose a project directory on the same volume".into());
+    }
+    let mut parts = Vec::new();
+    for component in &from[common..] {
+        if matches!(component, std::path::Component::Normal(_)) {
+            parts.push("..".to_owned());
+        }
+    }
+    for component in &to[common..] {
+        if let std::path::Component::Normal(name) = component {
+            let name = name
+                .to_str()
+                .ok_or_else(|| "Linked audio path contains non-Unicode characters and cannot be stored portably".to_owned())?;
+            parts.push(name.to_owned());
+        }
+    }
+    if parts.is_empty() {
+        return Err("Could not form a relative path to the audio file".into());
+    }
+    Ok(parts.join("/"))
 }
 
 fn update_snapshot(snapshot: &Arc<Mutex<Snapshot>>, update: impl FnOnce(&mut Snapshot)) {
@@ -696,6 +778,7 @@ fn audio_worker(receiver: mpsc::Receiver<Command>, snapshot: Arc<Mutex<Snapshot>
                     view.position_ms = 0;
                     view.message = "Reading and validating audio…".into();
                     view.file_name.clear();
+                    view.audio_path = None;
                     view.waveform.clear();
                     view.duration_ms = 0;
                 });
@@ -708,6 +791,7 @@ fn audio_worker(receiver: mpsc::Receiver<Command>, snapshot: Arc<Mutex<Snapshot>
                             .to_owned();
                         update_snapshot(&snapshot, |view| {
                             view.file_name = name;
+                            view.audio_path = Some(path.clone());
                             view.waveform = loaded.waveform.clone();
                             view.duration_ms = loaded.duration_ms;
                             view.position_ms = 0;
@@ -719,6 +803,7 @@ fn audio_worker(receiver: mpsc::Receiver<Command>, snapshot: Arc<Mutex<Snapshot>
                     }
                     Err(error) => update_snapshot(&snapshot, |view| {
                         view.loading = false;
+                        view.audio_path = None;
                         view.message = format!("Could not open audio: {}", error.message);
                     }),
                 }

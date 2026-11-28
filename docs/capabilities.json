@@ -108,12 +108,12 @@
     },
     {
       "operation": "play-wav",
-      "description": "Native Iced workspace for bounded offline WAV/FLAC/MP3/OGG/AAC/M4A/AIFF playback, selectable local input devices, bounded PCM16 WAV recording with live elapsed status and stop/finalize, plus waveform seeking, synchronized transcript cues and timing undo/redo",
+      "description": "Native Iced workspace for bounded offline WAV/FLAC/MP3/OGG/AAC/M4A/AIFF playback, selectable local input devices, bounded PCM16 WAV recording with live elapsed status and stop/finalize, waveform seeking, synchronized transcript cues and timing undo/redo; version 2 projects retain relative linked-audio paths with explicit loading and version 1 compatibility",
       "status": "implemented-unverified",
       "targets": [
         "x86_64-unknown-linux-gnu"
       ],
-      "fixture_status": "Recording buffer/finalization/no-overwrite tests are hardware-independent; host device enumeration, physical input capture and playback are not verified"
+      "fixture_status": "Audio project v2 relative-link round-trip, v1 compatibility and invalid path rejection tests passed; recording buffer/finalization/no-overwrite tests are hardware-independent; GUI compile, host device enumeration, physical input capture and playback are unverified"
     },
     {
       "operation": "audio-info",
