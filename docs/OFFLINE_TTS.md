@@ -54,7 +54,12 @@ Place the resulting `engines/tts-en-us-kitten-nano-v0_8-int8` directory beside
 the executable. Inference does not access the network. The compressed source
 archive is about 29.8 MiB; model, voices, tokens, lexicon, and licensing/model
 card files occupy about 30.8 MiB before packaging. No application download or
-runtime package manager is required.
+runtime package manager is required. The manual `Offline TTS development
+bundle` workflow builds an unsigned Linux x64 bundle, extracts it, verifies the
+installed pack through the application, synthesizes a sample, and checks the
+resulting WAV before uploading a short-lived artifact. That package workflow
+has not yet been run; other target-specific bundles remain future distribution
+work.
 
 ## Verification status
 
