@@ -11,6 +11,7 @@ from pathlib import Path
 
 from dependency_notices import collect
 from package import CFG, R, TARGETS, check_binary, payload, validate_host
+from tts_model_pack import MANIFEST as TTS_MANIFEST, verify_pack_directory
 from whisper_model_pack import DEFAULT_MODEL, MANIFESTS, load_manifest, stage_model
 
 
@@ -30,6 +31,11 @@ def main():
         default=DEFAULT_MODEL,
         help="pinned model variant to package with --whisper-model",
     )
+    parser.add_argument(
+        "--tts-pack",
+        type=Path,
+        help="previously assembled, verified offline Kitten voice pack directory",
+    )
     args = parser.parse_args()
     if args.whisper_model_id != DEFAULT_MODEL and not args.whisper_model:
         parser.error("--whisper-model-id requires --whisper-model")
@@ -43,7 +49,16 @@ def main():
     check_binary(args.binary, args.target)
 
     manifest, _ = load_manifest(args.whisper_model_id)
-    edition = f"preview-asr-{manifest['id']}" if args.whisper_model else "preview"
+    editions = []
+    if args.whisper_model:
+        editions.append(f"asr-{manifest['id']}")
+    if args.tts_pack:
+        try:
+            verify_pack_directory(args.tts_pack)
+        except (OSError, ValueError) as error:
+            parser.error(str(error))
+        editions.append(f"tts-{TTS_MANIFEST['id']}")
+    edition = f"preview-{'-'.join(editions)}" if editions else "preview"
     stem = f"{name}-{CFG['package_version']}-{args.target}-{edition}"
     with tempfile.TemporaryDirectory(prefix="studio-portable-") as directory:
         temp = Path(directory)
@@ -54,8 +69,16 @@ def main():
                 _, manifest = stage_model(args.whisper_model, bundle, args.whisper_model_id)
             except (OSError, ValueError) as error:
                 parser.error(str(error))
-        collect(R, bundle, args.target, args.binary,
-                features=("asr",) if args.whisper_model else ())
+        if args.tts_pack:
+            destination = bundle / "engines" / TTS_MANIFEST["id"]
+            shutil.copytree(args.tts_pack, destination)
+            verify_pack_directory(destination)
+        features = tuple(
+            feature
+            for feature, enabled in (("asr", bool(args.whisper_model)), ("tts", bool(args.tts_pack)))
+            if enabled
+        )
+        collect(R, bundle, args.target, args.binary, features=features)
         payload_status = (
             "Unsigned portable development build. Launch the application in this directory.\n"
         )
@@ -65,7 +88,12 @@ def main():
                 f"Includes the pinned {model_name} ASR model. "
                 "Platform libraries may be required.\n"
             )
-        else:
+        if args.tts_pack:
+            payload_status += (
+                "Includes the pinned Kitten Nano English text-to-speech pack. "
+                "Synthesis runs locally without network access.\n"
+            )
+        if not args.whisper_model and not args.tts_pack:
             payload_status += (
                 "This bundle contains no private engines or speech model. "
                 "Platform libraries may be required.\n"
@@ -106,6 +134,45 @@ def main():
             raise SystemExit(
                 "ASR-enabled binary and private speech model must be supplied together"
             )
+        help_tts = any(line.startswith("synthesize-speech:") for line in result.stdout.splitlines())
+        if help_tts != bool(args.tts_pack):
+            raise SystemExit("TTS-enabled binary and private speech pack must be supplied together")
+        if args.tts_pack:
+            verified = subprocess.run(
+                [command, "--cli", "verify-tts-pack", "", "", ""],
+                cwd=command.parent,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=True,
+                timeout=60,
+            )
+            if "Verified" not in verified.stdout:
+                raise SystemExit("Packaged TTS model did not pass application SHA-256 verification")
+            with tempfile.TemporaryDirectory(prefix="speech-tts-smoke-") as directory:
+                output = Path(directory) / "offline-smoke.wav"
+                result = subprocess.run(
+                    [
+                        command,
+                        "--cli",
+                        "synthesize-speech",
+                        "",
+                        output,
+                        '{"text":"Offline speech synthesis smoke test.","voice":"Jasper","speed":1.0}',
+                    ],
+                    cwd=command.parent,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    check=True,
+                    timeout=180,
+                )
+                if not output.is_file() or output.stat().st_size <= 44:
+                    raise SystemExit(f"Packaged TTS smoke test wrote no audio: {result.stderr}")
+                import wave
+                with wave.open(str(output), "rb") as sample:
+                    if (sample.getnchannels(), sample.getsampwidth(), sample.getframerate()) != (1, 2, 24000):
+                        raise SystemExit("Packaged TTS smoke test returned an unexpected WAV format")
         if args.whisper_model:
             installed = extracted / name / "engines" / manifest["id"] / manifest["file"]
             with installed.open("rb") as model:

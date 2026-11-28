@@ -206,6 +206,34 @@ def create_pack(archive: Path, dictionary: Path, dictionary_license: Path, outpu
         raise
 
 
+def verify_pack_directory(directory: Path, manifest=MANIFEST) -> None:
+    """Verify an installed TTS pack before it is copied into a portable bundle."""
+    try:
+        directory.lstat()
+    except OSError as error:
+        raise ValueError("TTS pack directory is unavailable") from error
+    if not directory.is_dir() or directory.is_symlink():
+        raise ValueError("TTS pack must be a real directory")
+    expected = {item["name"]: item for item in manifest["files"]}
+    actual = {child.name for child in directory.iterdir()}
+    required = set(expected) | {"manifest.json"}
+    if actual != required:
+        raise ValueError("TTS pack directory contains missing or unexpected files")
+    for name, item in expected.items():
+        path = directory / name
+        file_metadata = path.lstat()
+        if not path.is_file() or path.is_symlink():
+            raise ValueError(f"TTS pack entry is not a regular file: {name}")
+        if file_metadata.st_size != item["size_bytes"] or _sha256(path) != item["sha256"]:
+            raise ValueError(f"TTS pack entry failed SHA-256 verification: {name}")
+    manifest_path = directory / "manifest.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise ValueError("TTS pack manifest must be a regular file")
+    packed_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if packed_manifest != manifest:
+        raise ValueError("TTS pack manifest differs from the pinned manifest")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("archive", type=Path, help="pinned sherpa Kitten Nano 0.8 archive")

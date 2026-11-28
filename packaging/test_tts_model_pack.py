@@ -75,10 +75,21 @@ class TtsModelPackTests(unittest.TestCase):
             self.archive, self.dictionary, self.dictionary_license, destination,
             self.manifest, self.model_card,
         )
+        PACKER.verify_pack_directory(destination, self.manifest)
         expected = {item["name"] for item in self.manifest["files"]} | {"manifest.json"}
         self.assertEqual({path.name for path in destination.iterdir()}, expected)
         self.assertEqual((destination / "CMUDICT-LICENSE").read_bytes(), self.dictionary_license.read_bytes())
         self.assertEqual(json.loads((destination / "manifest.json").read_text()), self.manifest)
+
+    def test_rejects_tampered_or_unexpected_installed_pack_files(self):
+        destination = self.root / "installed"
+        PACKER.extract_assets(
+            self.archive, self.dictionary, self.dictionary_license, destination,
+            self.manifest, self.model_card,
+        )
+        (destination / "tokens.txt").write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "SHA-256"):
+            PACKER.verify_pack_directory(destination, self.manifest)
 
     def test_creates_verified_installable_directory_layout(self):
         output = PACKER.create_pack(
