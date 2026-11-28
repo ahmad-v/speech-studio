@@ -38,6 +38,7 @@ SOURCE_ASSETS = {
     "config.json": (1_416, "df92c371911b45282caac6101fe7e7f5d5e9af7f9a99356067ffe306278ce72b"),
     "source.spm": (778_395, "173e9f493a668fe396d599e28d414a201193094e6ffd7a4678e5aab0f6d3d838"),
     "target.spm": (802_397, "78d0e717c77053f1c4b856d8661d9cb87c64f083a35418c087b9146300e4f585"),
+    "vocab.json": (1_339_166, "945c604346ce15ce4aff9001001e7f925e336d942c4087017f191871162cbdc4"),
     "MODEL_CARD.md": (1_209, "695f64a07925db14e3e2f9d0f2074ef8ac86e4d43939451fae5603683dba90a6"),
 }
 PACK_ASSETS = {
@@ -46,14 +47,15 @@ PACK_ASSETS = {
 }
 PACK_NOTICES = {
     "LICENSE-APACHE-2.0": (11_358, "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"),
-    "THIRD_PARTY_NOTICE.txt": (513, "731aefbe83291909a685a108ed7979c67773e8e3049ee2558f4122d9b1b3b2eb"),
+    "THIRD_PARTY_NOTICE.txt": (589, "0c013d0d76a8b41e7ee2341df5ee754fa485a929cf5ec9e41ca538653d99936b"),
 }
 UPSTREAM_FILES = {"MODEL_CARD.md": "README.md"}
 MAX_ASSET_BYTES = 320 * 1024 * 1024
 NOTICE = (
     "OPUS-MT Helsinki-NLP opus-mt-en-fr, pinned revision " + MODEL_REV + ".\n"
     "The model card declares Apache-2.0. The weights and SentencePiece vocabularies\n"
-    "are from that repository revision; see MODEL_CARD.md and LICENSE-APACHE-2.0.\n"
+    "and model-aligned vocab.json are from that revision; see MODEL_CARD.md and\n"
+    "LICENSE-APACHE-2.0. The runtime maps SentencePiece pieces through vocab.json.\n"
     f"The pinned legacy PyTorch state dictionary was converted losslessly to safetensors\n"
     f"with {CONVERSION_TOOLCHAIN}; see manifest conversion provenance.\n"
     "This pack is English-to-French only. Model accuracy is not guaranteed.\n"

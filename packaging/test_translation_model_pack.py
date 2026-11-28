@@ -23,6 +23,7 @@ class TranslationPackTests(unittest.TestCase):
             "pytorch_model.bin": b"fixture-model",
             "source.spm": b"fixture-source-tokenizer",
             "target.spm": b"fixture-target-tokenizer",
+            "vocab.json": b"{}",
             "MODEL_CARD.md": b"license: apache-2.0\nopus-mt-en-fr\n",
         }.items()}
         PACK.SOURCE_ASSETS = {

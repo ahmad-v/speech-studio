@@ -33,6 +33,11 @@
       "sha256": "78d0e717c77053f1c4b856d8661d9cb87c64f083a35418c087b9146300e4f585"
     },
     {
+      "name": "vocab.json",
+      "size_bytes": 1339166,
+      "sha256": "945c604346ce15ce4aff9001001e7f925e336d942c4087017f191871162cbdc4"
+    },
+    {
       "name": "MODEL_CARD.md",
       "size_bytes": 1209,
       "sha256": "695f64a07925db14e3e2f9d0f2074ef8ac86e4d43939451fae5603683dba90a6"
@@ -44,8 +49,8 @@
     },
     {
       "name": "THIRD_PARTY_NOTICE.txt",
-      "size_bytes": 513,
-      "sha256": "731aefbe83291909a685a108ed7979c67773e8e3049ee2558f4122d9b1b3b2eb"
+      "size_bytes": 589,
+      "sha256": "0c013d0d76a8b41e7ee2341df5ee754fa485a929cf5ec9e41ca538653d99936b"
     }
   ]
 }

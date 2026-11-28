@@ -13,6 +13,7 @@ use sentencepiece_rs::SentencePieceProcessor;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashMap,
     fs::{self, File},
     io::Read,
     path::{Path, PathBuf},
@@ -22,6 +23,7 @@ const PACK_ID: &str = "opus-mt-en-fr-v1";
 const MODEL_REVISION: &str = "dd7f6540a7a48a7f4db59e5c0b9c42c8eea67f18";
 const MAX_MANIFEST_BYTES: u64 = 16 * 1024;
 const MAX_MODEL_BYTES: u64 = 320 * 1024 * 1024;
+const MAX_VOCAB_BYTES: u64 = 2 * 1024 * 1024;
 const MAX_INPUT_BYTES: usize = 8 * 1024;
 const MAX_INPUT_TOKENS: usize = 384;
 const MAX_OUTPUT_TOKENS: usize = 384;
@@ -90,6 +92,11 @@ fn expected_manifest() -> Manifest {
                 sha256: "78d0e717c77053f1c4b856d8661d9cb87c64f083a35418c087b9146300e4f585".into(),
             },
             ManifestFile {
+                name: "vocab.json".into(),
+                size_bytes: 1_339_166,
+                sha256: "945c604346ce15ce4aff9001001e7f925e336d942c4087017f191871162cbdc4".into(),
+            },
+            ManifestFile {
                 name: "MODEL_CARD.md".into(),
                 size_bytes: 1_209,
                 sha256: "695f64a07925db14e3e2f9d0f2074ef8ac86e4d43939451fae5603683dba90a6".into(),
@@ -101,11 +108,49 @@ fn expected_manifest() -> Manifest {
             },
             ManifestFile {
                 name: "THIRD_PARTY_NOTICE.txt".into(),
-                size_bytes: 513,
-                sha256: "731aefbe83291909a685a108ed7979c67773e8e3049ee2558f4122d9b1b3b2eb".into(),
+                size_bytes: 589,
+                sha256: "0c013d0d76a8b41e7ee2341df5ee754fa485a929cf5ec9e41ca538653d99936b".into(),
             },
         ],
     }
+}
+
+fn parse_model_vocabulary(
+    bytes: &[u8],
+    expected_size: usize,
+) -> Result<(HashMap<String, usize>, Vec<String>)> {
+    let token_to_id: HashMap<String, usize> = serde_json::from_slice(bytes)
+        .map_err(|error| Error::input(format!("Could not parse Marian vocab.json: {error}")))?;
+    if token_to_id.len() != expected_size {
+        return Err(Error::input(
+            "Pinned Marian vocabulary has an unexpected number of entries",
+        ));
+    }
+    let mut id_to_piece = vec![String::new(); expected_size];
+    let mut seen = vec![false; expected_size];
+    for (piece, id) in &token_to_id {
+        if *id >= expected_size || seen[*id] {
+            return Err(Error::input(
+                "Pinned Marian vocabulary IDs are out of range or duplicated",
+            ));
+        }
+        seen[*id] = true;
+        id_to_piece[*id] = piece.clone();
+    }
+    if seen.iter().any(|present| !present) {
+        return Err(Error::input(
+            "Pinned Marian vocabulary IDs are not contiguous",
+        ));
+    }
+    Ok((token_to_id, id_to_piece))
+}
+
+fn vocabulary_id_for_piece(piece: &str, token_to_id: &HashMap<String, usize>) -> Result<u32> {
+    let id = token_to_id
+        .get(piece)
+        .copied()
+        .ok_or_else(|| Error::input("SentencePiece token is missing from Marian vocab.json"))?;
+    u32::try_from(id).map_err(|_| Error::input("Marian token ID exceeds the supported range"))
 }
 
 fn app_root() -> Result<PathBuf> {
@@ -240,32 +285,6 @@ pub(crate) fn translate_english_to_french(text: &str, job: &Job) -> Result<Strin
     }
     let root = pack_root(&app_root()?)?;
     verify(&root, job)?;
-    let source = SentencePieceProcessor::open(root.join("source.spm"))
-        .map_err(|error| Error::input(format!("Could not load English tokenizer: {error}")))?;
-    let target = SentencePieceProcessor::open(root.join("target.spm"))
-        .map_err(|error| Error::input(format!("Could not load French tokenizer: {error}")))?;
-    let mut input_tokens: Vec<u32> = source
-        .encode_to_ids(text)
-        .map_err(|error| Error::input(format!("Could not tokenize English text: {error}")))?
-        .into_iter()
-        .map(|token| {
-            u32::try_from(token)
-                .map_err(|_| Error::input("English token identifier exceeds the supported range"))
-        })
-        .collect::<Result<_>>()?;
-    if input_tokens.is_empty() || input_tokens.len() > MAX_INPUT_TOKENS {
-        return Err(Error::input(
-            "Translation text must tokenize to 1–384 subword tokens",
-        ));
-    }
-    if input_tokens.last() != Some(&0_u32) {
-        // Marian's source encoder expects the SentencePiece end-of-sequence
-        // token appended by the Hugging Face tokenizer's model-input builder.
-        input_tokens.push(0_u32);
-    }
-    job.check()?;
-
-    let device = Device::Cpu;
     let config: Config =
         serde_json::from_slice(&fs::read(root.join("config.json"))?).map_err(|error| {
             Error::input(format!(
@@ -285,6 +304,52 @@ pub(crate) fn translate_english_to_french(text: &str, job: &Job) -> Result<Strin
             "Pinned Marian configuration has unsupported dimensions or token IDs",
         ));
     }
+    let vocab_path = root.join("vocab.json");
+    let vocab_metadata = fs::symlink_metadata(&vocab_path)?;
+    if vocab_metadata.file_type().is_symlink()
+        || !vocab_metadata.is_file()
+        || vocab_metadata.len() > MAX_VOCAB_BYTES
+    {
+        return Err(Error::input("Pinned Marian vocabulary file is invalid"));
+    }
+    let (token_to_id, id_to_piece) =
+        parse_model_vocabulary(&fs::read(&vocab_path)?, config.vocab_size)?;
+    if token_to_id.get("</s>") != Some(&(config.eos_token_id as usize))
+        || token_to_id.get("<pad>") != Some(&(config.pad_token_id as usize))
+        || token_to_id.get("<unk>") != Some(&1)
+    {
+        return Err(Error::input(
+            "Pinned Marian vocabulary special-token IDs do not match its configuration",
+        ));
+    }
+    let source = SentencePieceProcessor::open(root.join("source.spm"))
+        .map_err(|error| Error::input(format!("Could not load English tokenizer: {error}")))?;
+    let target = SentencePieceProcessor::open(root.join("target.spm"))
+        .map_err(|error| Error::input(format!("Could not load French tokenizer: {error}")))?;
+    let source_piece_ids = source
+        .encode_to_ids(text)
+        .map_err(|error| Error::input(format!("Could not tokenize English text: {error}")))?;
+    let mut input_tokens = Vec::with_capacity(source_piece_ids.len() + 1);
+    for source_id in source_piece_ids {
+        let piece = source
+            .id_to_piece(source_id)
+            .map_err(|error| Error::input(format!("Could not resolve English token: {error}")))?;
+        input_tokens.push(vocabulary_id_for_piece(piece, &token_to_id)?);
+    }
+    if input_tokens.is_empty() || input_tokens.len() > MAX_INPUT_TOKENS {
+        return Err(Error::input(
+            "Translation text must tokenize to 1–384 subword tokens",
+        ));
+    }
+    let eos_id = config.eos_token_id;
+    if input_tokens.last() != Some(&eos_id) {
+        // HF Marian maps SentencePiece pieces through vocab.json, then appends
+        // the model vocabulary's </s> ID as the source encoder's EOS marker.
+        input_tokens.push(eos_id);
+    }
+    job.check()?;
+
+    let device = Device::Cpu;
     let weights = root.join("model.safetensors");
     let weight_data = fs::read(&weights)?;
     let variables = VarBuilder::from_buffered_safetensors(weight_data, DType::F32, &device)
@@ -345,8 +410,21 @@ pub(crate) fn translate_english_to_french(text: &str, job: &Job) -> Result<Strin
         ));
     }
     generated.remove(0);
+    let target_token_ids = generated
+        .iter()
+        .map(|model_id| {
+            let piece = id_to_piece.get(*model_id).ok_or_else(|| {
+                Error::input("Marian decoder returned a token outside vocab.json")
+            })?;
+            target.try_piece_to_id(piece).ok_or_else(|| {
+                Error::input(format!(
+                    "Marian output token {piece:?} is absent from the target SentencePiece model"
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
     let translated = target
-        .decode_ids(&generated)
+        .decode_ids(&target_token_ids)
         .map_err(|error| Error::input(format!("Could not decode French output: {error}")))?;
     if translated.trim().is_empty() || translated.len() > 16 * 1024 {
         return Err(Error::input(
@@ -376,10 +454,40 @@ mod tests {
             manifest.conversion_toolchain,
             "PyTorch 2.5.1+cpu; safetensors 0.6.2; packaging 25.0; NumPy 1.26.4"
         );
-        assert_eq!(manifest.files.len(), 7);
+        assert_eq!(manifest.files.len(), 8);
         assert_eq!(manifest.files[0].name, "model.safetensors");
         assert_eq!(manifest.files[0].size_bytes, 300_803_144);
+        assert_eq!(manifest.files[4].name, "vocab.json");
+        assert_eq!(
+            manifest.files[4].sha256,
+            "945c604346ce15ce4aff9001001e7f925e336d942c4087017f191871162cbdc4"
+        );
         assert!(manifest.files.iter().all(|file| file.sha256.len() == 64));
+    }
+
+    #[test]
+    fn sentencepiece_piece_ids_are_remapped_to_model_vocabulary_ids() {
+        // SentencePiece's local ID is deliberately unrelated to Marian's
+        // vocabulary ID. Passing the former straight to the model corrupted
+        // both input tokens and decoded output.
+        let bytes = r#"{"</s>":0,"<unk>":1,"<pad>":3,"▁bonjour":2}"#.as_bytes();
+        let (token_to_id, id_to_piece) = parse_model_vocabulary(bytes, 4).unwrap();
+        assert_eq!(
+            vocabulary_id_for_piece("▁bonjour", &token_to_id).unwrap(),
+            2
+        );
+        assert_eq!(id_to_piece[2], "▁bonjour");
+        assert_eq!(id_to_piece[0], "</s>");
+    }
+
+    #[test]
+    fn malformed_model_vocabulary_ids_are_rejected() {
+        let duplicate_ids = br#"{"a":0,"b":0}"#;
+        assert!(parse_model_vocabulary(duplicate_ids, 2).is_err());
+        let non_contiguous_ids = br#"{"a":0,"b":2}"#;
+        assert!(parse_model_vocabulary(non_contiguous_ids, 2).is_err());
+        let missing_piece = HashMap::from([(String::from("known"), 1)]);
+        assert!(vocabulary_id_for_piece("unknown", &missing_piece).is_err());
     }
 
     #[test]

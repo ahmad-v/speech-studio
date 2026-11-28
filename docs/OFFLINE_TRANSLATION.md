@@ -20,8 +20,11 @@ write a deterministic safetensors file for Candle. The converter checks tied
 encoder/decoder embedding aliases are identical before retaining the canonical
 shared tensor. The app itself does not include or invoke Python or PyTorch.
 The approximately 301 MB converted weights, two SentencePiece vocabulary
-files, card, manifest and notices are included in the optional pack. No model
-binary is committed to this repository. The manifest records source provenance,
+files, card, manifest and notices are included in the optional pack. The
+model-aligned `vocab.json` is used to map SentencePiece pieces to Marian model
+token IDs on input and back to target SentencePiece IDs on output; the
+SentencePiece IDs must not be passed directly to Marian. No model binary is
+committed to this repository. The manifest records source provenance,
 conversion tool versions and exact distributed file sizes and SHA-256 values.
 
 The official model card reports historical benchmark scores for its model.
@@ -69,8 +72,9 @@ conversion.
 - Output generation is limited to 384 tokens; inference checks cancellation
   between generated tokens.
 - Output exports use create-new semantics and preserve any existing file.
-- The pack and inference source are integrated, but a hosted clean-pack
-  inference smoke and multilingual-quality benchmark remain required before
-  the capability can be accepted as fully verified.
+- The pack assembles and verifies, but its hosted inference smoke exposed
+  incorrect SentencePiece-to-model token-ID handling. The remapping correction
+  is under verification; clean-pack inference must pass before this capability
+  can be accepted. Multilingual-quality benchmarks remain unmeasured.
 - The current model covers English-to-French only. It is not a general
   multilingual translation engine, and it is not a speech translation model.
