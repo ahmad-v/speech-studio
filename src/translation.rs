@@ -63,7 +63,8 @@ fn expected_manifest() -> Manifest {
         source_model_file: "pytorch_model.bin".into(),
         source_model_sha256: "cc1de10b49342ad2f33e06bc4474ddd6eaca278474903c4a8636ce15680d64de"
             .into(),
-        conversion_toolchain: "PyTorch 2.5.1+cpu; safetensors 0.6.2; packaging 25.0".into(),
+        conversion_toolchain: "PyTorch 2.5.1+cpu; safetensors 0.6.2; packaging 25.0; NumPy 1.26.4"
+            .into(),
         tokenizer_repository: "Helsinki-NLP/opus-mt-en-fr".into(),
         tokenizer_revision: MODEL_REVISION.into(),
         language_pair: "English (en) to French (fr)".into(),
@@ -100,8 +101,8 @@ fn expected_manifest() -> Manifest {
             },
             ManifestFile {
                 name: "THIRD_PARTY_NOTICE.txt".into(),
-                size_bytes: 499,
-                sha256: "0c285eaca22f92fa19cd1ec5fe0f6f2129b04b4b7ac7e2de73f7b3df73d1c5b2".into(),
+                size_bytes: 513,
+                sha256: "731aefbe83291909a685a108ed7979c67773e8e3049ee2558f4122d9b1b3b2eb".into(),
             },
         ],
     }
@@ -373,7 +374,7 @@ mod tests {
         );
         assert_eq!(
             manifest.conversion_toolchain,
-            "PyTorch 2.5.1+cpu; safetensors 0.6.2; packaging 25.0"
+            "PyTorch 2.5.1+cpu; safetensors 0.6.2; packaging 25.0; NumPy 1.26.4"
         );
         assert_eq!(manifest.files.len(), 7);
         assert_eq!(manifest.files[0].name, "model.safetensors");

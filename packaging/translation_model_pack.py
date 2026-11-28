@@ -25,8 +25,10 @@ TOKENIZER_REPO = MODEL_REPO
 TORCH_VERSION = "2.5.1+cpu"
 SAFETENSORS_VERSION = "0.6.2"
 PACKAGING_VERSION = "25.0"
+NUMPY_VERSION = "1.26.4"
 CONVERSION_TOOLCHAIN = (
-    f"PyTorch {TORCH_VERSION}; safetensors {SAFETENSORS_VERSION}; packaging {PACKAGING_VERSION}"
+    f"PyTorch {TORCH_VERSION}; safetensors {SAFETENSORS_VERSION}; packaging {PACKAGING_VERSION}; "
+    f"NumPy {NUMPY_VERSION}"
 )
 SOURCE_MODEL_FILE = "pytorch_model.bin"
 SOURCE_MODEL_BYTES = 300_827_685
@@ -44,7 +46,7 @@ PACK_ASSETS = {
 }
 PACK_NOTICES = {
     "LICENSE-APACHE-2.0": (11_358, "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"),
-    "THIRD_PARTY_NOTICE.txt": (499, "0c285eaca22f92fa19cd1ec5fe0f6f2129b04b4b7ac7e2de73f7b3df73d1c5b2"),
+    "THIRD_PARTY_NOTICE.txt": (513, "731aefbe83291909a685a108ed7979c67773e8e3049ee2558f4122d9b1b3b2eb"),
 }
 UPSTREAM_FILES = {"MODEL_CARD.md": "README.md"}
 MAX_ASSET_BYTES = 320 * 1024 * 1024
@@ -108,6 +110,7 @@ def convert_weights(source: Path, destination: Path) -> None:
         import torch
         import safetensors
         import packaging
+        import numpy
         from safetensors.torch import save_file
     except ImportError as error:
         raise RuntimeError(
@@ -117,10 +120,12 @@ def convert_weights(source: Path, destination: Path) -> None:
         torch.__version__ != TORCH_VERSION
         or safetensors.__version__ != SAFETENSORS_VERSION
         or packaging.__version__ != PACKAGING_VERSION
+        or numpy.__version__ != NUMPY_VERSION
     ):
         raise RuntimeError(
             f"expected {CONVERSION_TOOLCHAIN}, found PyTorch {torch.__version__}; "
-            f"safetensors {safetensors.__version__}; packaging {packaging.__version__}"
+            f"safetensors {safetensors.__version__}; packaging {packaging.__version__}; "
+            f"NumPy {numpy.__version__}"
         )
     state = torch.load(source, map_location="cpu", weights_only=True)
     if not isinstance(state, dict) or not state or not all(
