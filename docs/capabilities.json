@@ -190,7 +190,7 @@
     },
     {
       "operation": "transcribe",
-      "description": "Optional CPU Whisper adapter with private Tiny English pack discovery",
+      "description": "Optional CPU Whisper adapter with app-relative English Tiny or multilingual Tiny packs; multilingual model language auto-detection is enabled",
       "status": "implemented-unverified",
       "targets": [
         "x86_64-unknown-linux-gnu"

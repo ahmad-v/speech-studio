@@ -32,3 +32,6 @@ audio-playback = ["dep:rodio", "dep:symphonia", "dep:cpal"]
 
 [dev-dependencies]
 tempfile = "=3.19.1"
+
+[patch.crates-io]
+whisper-rs-sys = { path = "vendor/whisper-rs-sys" }

@@ -1,0 +1,9 @@
+# Preserve bindgen's verified Windows-generated artifact byte-for-byte; CRLF is
+# its native output line ending and is included in the recorded digest.
+vendor/whisper-rs-sys/src/bindings_windows_arm64.rs whitespace=cr-at-eol
+
+# Retain upstream C/C++ files verbatim while the vendored dependency is tracked.
+vendor/whisper-rs-sys/whisper.cpp/cmake/FindFFmpeg.cmake whitespace=-blank-at-eof
+vendor/whisper-rs-sys/whisper.cpp/ggml/src/ggml-sycl/conv.cpp whitespace=-blank-at-eof
+vendor/whisper-rs-sys/whisper.cpp/ggml/src/ggml-sycl/outprod.hpp whitespace=-blank-at-eof
+vendor/whisper-rs-sys/whisper.cpp/ggml/src/ggml-vulkan/vulkan-shaders/acc.comp whitespace=-blank-at-eof
