@@ -35,6 +35,6 @@
     {"name": "lexicon.txt", "size_bytes": 3972115, "sha256": "c7b7d6bd6db10cf90af8779c95e81e7d85d1c19a711c90b9bb3357b084b38b74"},
     {"name": "LICENSE", "size_bytes": 11358, "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"},
     {"name": "CMUDICT-LICENSE", "size_bytes": 1754, "sha256": "bd4ce8e44170a5f9f481310ca85c51de3c4f851a65e679b40e603b143bd3542a"},
-    {"name": "MODEL_CARD.md", "size_bytes": 741, "sha256": "ff39adbcb653e9beaa612b405c4e301ee62eb4201b32dd77ae36f4078537b8ef"}
+    {"name": "MODEL_CARD.md", "size_bytes": 739, "sha256": "89800b1fd12297f55547fb5cb3b6a56f2d7f36bfa19e1d4790f4ef8bfcb16650"}
   ]
 }

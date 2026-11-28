@@ -3,7 +3,7 @@ license: apache-2.0
 ---
 # Kitten TTS Nano 0.8 😻
 
-Kitten TTS is an open-source realistic text-to-speech model with 15 million parameters and around 25MB of filesize. 
+Kitten TTS is an open-source realistic text-to-speech model with 15 million parameters and around 25MB of filesize.
 
 
 
@@ -17,7 +17,7 @@ pip install https://github.com/KittenML/KittenTTS/releases/download/0.8/kittentt
 
 
 
-### Basic Usage 
+### Basic Usage
 
 ```
 from kittentts import KittenTTS
@@ -31,4 +31,4 @@ sf.write('output.wav', audio, 24000)
 
 ### Acknowledgements
 
-StyleTTS 2 architecture 
+StyleTTS 2 architecture
