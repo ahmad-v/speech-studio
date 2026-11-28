@@ -113,7 +113,7 @@
       "targets": [
         "x86_64-unknown-linux-gnu"
       ],
-      "fixture_status": "Existing audio project v2 relative-link round-trip, v1 compatibility and invalid path rejection tests passed; transcript offset mapping, bounds, v3 round-trip, v1/v2 migration and shared offset undo/redo tests added pending hosted execution; transcript edit, replacement, history and filter tests passed on prior code head d74b7a8; recording buffer/finalization/no-overwrite tests are hardware-independent; host device enumeration, physical input capture and playback are unverified; TTS GUI added in PR #32, native synthesis requires hosted all-features verification and the external voice pack remains undistributed pending model-weight license review"
+      "fixture_status": "Audio/transcript project compatibility and synchronization checks passed in hosted Check/Integration/Native runs; transcription and recording behavior still require feature-specific verification; physical input capture and playback remain unverified. Optional TTS has a pinned, hash-verified Apache model package and BSD-noticed lexicon; Integration run 46177120953 verified offline synthesis and WAV validity, and Native run 46177120949 passed all five targets including Windows static CRT alignment. Voice quality, memory/performance, physical devices and extracted-pack lifecycle remain unverified"
     },
     {
       "operation": "audio-info",
@@ -391,14 +391,14 @@
       "description": "Experimental offline English Kitten Nano 0.8 int8 synthesis to a new mono PCM16 WAV, with eight selectable voices, bounded text/output, speed control, progress and cooperative cancellation; the app-relative model pack includes a CMUdict-derived lexicon and retained Apache/BSD notices",
       "status": "implemented-unverified",
       "targets": [],
-      "fixture_status": "Model archive SHA-256 and exact upstream Apache model-card revision are pinned; CMUdict BSD source revision, license, generated lexicon bytes/hash and Kitten token compatibility are pinned. Deterministic asset packer tests are being updated; hosted Rust compilation and actual synthesis with the exact offline pack remain required before functional acceptance."
+      "fixture_status": "Pinned model/engine/lexicon provenance and hashes are verified. Integration run 46177120953 passed offline pack assembly, synthesis, WAV validation and no-IP networking; Native run 46177120949 passed all five targets. Voice quality and package lifecycle remain unverified."
     },
     {
       "operation": "verify-tts-pack",
       "description": "Verify the application-relative Kitten ONNX model, eight-voice data, tokens, generated CMUdict lexicon, model card, and both license notices against pinned sizes and SHA-256 values",
       "status": "implemented-unverified",
       "targets": [],
-      "fixture_status": "Hash/manifest unit tests and deterministic pack assembly tests are being updated; hosted verification and clean-pack inference smoke remain outstanding."
+      "fixture_status": "Pack assembly, pinned asset/hash verification and offline inference smoke passed in Integration run 46177120953; extracted installed-bundle lifecycle remains unverified."
     },
     {
       "operation": "translate-text-en-fr",
@@ -412,7 +412,7 @@
       "description": "Check the application-relative OPUS-MT model, config, SentencePiece vocabularies, model card, Apache license and third-party notice against exact pinned hashes",
       "status": "implemented-unverified",
       "targets": [],
-      "fixture_status": "Packer tests cover manifest agreement, changed-asset rejection, unsafe archive rejection, verified extraction and no-overwrite behavior. The real 301 MB pack has not yet been assembled or run."
+      "fixture_status": "Packer tests cover manifest agreement, altered-asset and archive-path rejection, verified extraction and no-overwrite behavior. The real 301 MB pack has not yet been assembled or run."
     }
   ]
 }
