@@ -5,7 +5,7 @@
 use hound::{SampleFormat, WavSpec, WavWriter};
 use localwright_core::{read_bounded, Error, Job, Result};
 use piper_plus_g2p::{english::EnglishPhonemizer, Phonemizer};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use sherpa_onnx::{
     GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsModelConfig,
@@ -27,7 +27,7 @@ const MAX_OUTPUT_SECONDS: usize = 180;
 const MAX_OUTPUT_SAMPLES: usize = 48_000 * MAX_OUTPUT_SECONDS;
 const MAX_MANIFEST_BYTES: u64 = 32 * 1024;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct PackManifest {
     schema_version: u32,
     id: String,
@@ -141,7 +141,7 @@ fn verify_pack_files_at(root: &Path, pack: &PackManifest, job: &Job) -> Result<(
     for file in &pack.files {
         job.check()?;
         let path = root.join(&file.name);
-        if path.parent() != Some(root.as_path())
+        if path.parent() != Some(root)
             || file.sha256.len() != 64
             || !file.sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
         {
