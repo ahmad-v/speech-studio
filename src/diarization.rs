@@ -58,7 +58,7 @@ pub struct ResourceRequirements {
     pub peak_memory: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct PackFile {
     pub name: String,
@@ -108,6 +108,30 @@ pub struct DiarizationResult {
     pub engine: String,
     pub model_pack: String,
     pub limitations: String,
+}
+
+/// Validate persisted diarization projects before editing or exporting them.
+pub fn validate_document(document: &DiarizedTranscript) -> Result<()> {
+    if document.schema_version != 1
+        || document.speaker_labels.len() > 100
+        || document.segments.is_empty()
+        || document.segments.len() > 20_000
+        || document.speaker_labels.iter().any(|label| {
+            let trimmed = label.trim();
+            trimmed.is_empty() || trimmed.len() > 128 || trimmed.chars().any(char::is_control)
+        })
+        || document.segments.iter().any(|cue| {
+            cue.end_ms <= cue.start_ms
+                || cue.text.trim().is_empty()
+                || cue.text.len() > 64 * 1024
+                || cue
+                    .speaker_index
+                    .is_some_and(|index| index as usize >= document.speaker_labels.len())
+        })
+    {
+        return Err(Error::input("Invalid or unsupported diarized transcript"));
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -447,6 +471,44 @@ pub fn diarize_wav(
     )
 }
 
+/// Run the installed offline pack next to the current executable.
+pub fn diarize_installed_wav(input: &Path, settings: &str, job: &Job) -> Result<DiarizationResult> {
+    let executable = std::env::current_exe()
+        .map_err(|_| Error::input("Could not locate the Speech Studio executable"))?;
+    let app_root = executable
+        .parent()
+        .ok_or_else(|| Error::input("Speech Studio executable has no parent directory"))?;
+    diarize_wav(input, app_root, settings, job)
+}
+
+/// Run diarization and bind the resulting recording-local labels to an SRT
+/// transcript. Uncovered cues stay explicitly unlabeled.
+pub fn diarize_srt(
+    input: &Path,
+    transcript: &Path,
+    settings: &str,
+    job: &Job,
+) -> Result<DiarizedTranscript> {
+    let result = diarize_installed_wav(input, settings, job)?;
+    let source = String::from_utf8(read_bounded(transcript, 2 * 1024 * 1024)?)
+        .map_err(|_| Error::input("Transcript must be UTF-8 SRT"))?;
+    let cues = crate::parse(&source)?;
+    let labeled = label_cues(&cues, &result.turns)?;
+    transcript_document(result.speaker_count, labeled)
+}
+
+/// Run the installed pack against a loaded native-workspace transcript.
+#[cfg(all(feature = "gui", feature = "audio-playback"))]
+pub fn diarize_cues(
+    input: &Path,
+    cues: &[crate::Segment],
+    job: &Job,
+) -> Result<DiarizedTranscript> {
+    let result = diarize_installed_wav(input, "", job)?;
+    let labeled = label_cues(cues, &result.turns)?;
+    transcript_document(result.speaker_count, labeled)
+}
+
 /// Assign each transcript cue to the speaker with the greatest temporal
 /// overlap. Cues with no detected overlap remain explicitly unlabeled.
 pub fn label_cues(cues: &[crate::Segment], turns: &[SpeakerTurn]) -> Result<Vec<SpeakerCue>> {
@@ -682,5 +744,69 @@ mod tests {
         assert_eq!(decoded.speaker_labels[1], "Interviewer");
         assert_eq!(decoded.segments[0].speaker_index, Some(1));
         assert_eq!(decoded.segments[0].text, "Good morning");
+    }
+
+    #[test]
+    fn native_operation_renames_and_reassigns_without_overwriting() {
+        use localwright_core::{Job, Request};
+
+        let directory = tempfile::tempdir().unwrap();
+        let input = directory.path().join("input.json");
+        let renamed = directory.path().join("renamed.json");
+        let reassigned = directory.path().join("reassigned.json");
+        let source = transcript_document(
+            2,
+            vec![SpeakerCue {
+                start_ms: 0,
+                end_ms: 1_000,
+                text: "Hello".into(),
+                speaker_index: Some(0),
+            }],
+        )
+        .unwrap();
+        fs::write(&input, serde_json::to_vec(&source).unwrap()).unwrap();
+
+        crate::handle(
+            Request {
+                operation: "rename-diarized-speaker".into(),
+                input: input.clone(),
+                output: renamed.clone(),
+                parameter: r#"{"speaker_index":1,"label":"Interviewer"}"#.into(),
+                ..Request::default()
+            },
+            Job::new(),
+        )
+        .unwrap();
+        crate::handle(
+            Request {
+                operation: "reassign-diarized-cue".into(),
+                input: renamed.clone(),
+                output: reassigned.clone(),
+                parameter: r#"{"cue_index":0,"speaker_index":1}"#.into(),
+                ..Request::default()
+            },
+            Job::new(),
+        )
+        .unwrap();
+
+        let result: DiarizedTranscript =
+            serde_json::from_slice(&fs::read(&reassigned).unwrap()).unwrap();
+        assert_eq!(result.speaker_labels[1], "Interviewer");
+        assert_eq!(result.segments[0].speaker_index, Some(1));
+        assert_eq!(
+            serde_json::from_slice::<DiarizedTranscript>(&fs::read(&input).unwrap()).unwrap(),
+            source
+        );
+        assert!(crate::handle(
+            Request {
+                operation: "reassign-diarized-cue".into(),
+                input: renamed,
+                output: reassigned,
+                parameter: r#"{"cue_index":0,"speaker_index":1}"#.into(),
+                ..Request::default()
+            },
+            Job::new(),
+        )
+        .is_err());
     }
 }

@@ -61,8 +61,18 @@ calibrated probability.
 
 Packaging tests cover deterministic asset allowlisting, model hash rejection,
 license inclusion and archive-link rejection. The actual upstream model files
-were downloaded and assembled on 2026-11-28; the 41,152,599-byte ZIP passed
-the packager and contained both model files and both license notices. The
-module is not yet registered in the operation/workspace UI. Native Rust
-compilation, end-to-end speaker inference, UI integration and reference-corpus
-quality measurements are pending. There is no diarization error-rate claim.
+were downloaded and assembled on 2026-11-28; an approximately 41 MB ZIP passed
+the packager and contained both model files and both license notices.
+
+With a build that enables the existing `tts`/sherpa feature,
+`verify-diarization-pack` checks the app-relative pack; `diarize-speakers`
+writes a bounded turns report; and `diarize-transcript` accepts the WAV as
+Input, an SRT path as Parameter, and a new JSON output. The native audio
+workspace exposes diarization for the loaded WAV and transcript, shows
+recording-local labels on cue rows, supports manual cue reassignment and speaker
+renaming, and saves a versioned speaker-labeled transcript JSON. Existing SRT
+and audio-workspace project formats are unchanged; speaker labels persist in
+the separate diarized transcript JSON. This new operation/UI integration still
+needs hosted compilation and workflow verification. Reference-corpus quality
+measurements remain outstanding; no diarization error-rate or general accuracy
+claim is made.

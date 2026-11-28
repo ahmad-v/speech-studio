@@ -83,7 +83,7 @@ impl Pcm16WavRecorder {
     }
 
     pub(crate) fn append(&mut self, samples: &[i16]) -> Result<(), String> {
-        if samples.len() % usize::from(self.channels) != 0 {
+        if !samples.len().is_multiple_of(usize::from(self.channels)) {
             return Err("Input recording buffer ended in a partial audio frame".into());
         }
         let next_count = self

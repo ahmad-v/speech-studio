@@ -1,0 +1,98 @@
+name: Offline speaker diarization pack
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diarization-pack-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-x64:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && contains(github.event.pull_request.labels.*.name, 'diarization-validation'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Install native audio and fixture tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libasound2-dev \
+            pkg-config ffmpeg espeak-ng strace
+
+      - name: Install the repository Rust toolchain
+        run: rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
+
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: diarization-${{ runner.os }}-${{ runner.arch }}-rust-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock') }}-debug-tts
+
+      - name: Test model pack allowlist and pin checks
+        run: python3 -m unittest discover -s packaging -p 'test_diarization_pack.py' -v
+
+      - name: Fetch hash-pinned model sources
+        run: |
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/segmentation.tar.bz2" \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/sherpa-onnx-pyannote-segmentation-3-0.tar.bz2
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/speaker-embedding.onnx" \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_eres2net_base_sv_zh-cn_3dspeaker_16k.onnx
+
+      - name: Build the native application and optional sherpa engine
+        run: cargo build --locked --features tts --bin speech-studio --jobs 2
+
+      - name: Assemble and install the offline model pack
+        run: |
+          python3 packaging/diarization_pack.py \
+            "$RUNNER_TEMP/segmentation.tar.bz2" \
+            "$RUNNER_TEMP/speaker-embedding.onnx" \
+            "$RUNNER_TEMP/diarization-pack"
+          mkdir -p target/debug/engines
+          cp -a "$RUNNER_TEMP/diarization-pack/engines/speaker-diarization-pyannote3-3dspeaker-v1" target/debug/engines/
+          test -f target/debug/engines/speaker-diarization-pyannote3-3dspeaker-v1/manifest.json
+
+      - name: Verify installed model and run an offline inference smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          target/debug/speech-studio --cli verify-diarization-pack '' '' ''
+          espeak-ng -v en-us+m1 -w "$RUNNER_TEMP/speaker-a.wav" 'The first speaker is describing a short offline test.'
+          espeak-ng -v en+f2 -w "$RUNNER_TEMP/speaker-b.wav" 'The second speaker replies during the same recording.'
+          ffmpeg -v error -y -i "$RUNNER_TEMP/speaker-a.wav" -i "$RUNNER_TEMP/speaker-b.wav" \
+            -filter_complex '[0:a][1:a]concat=n=2:v=0:a=1[out]' -map '[out]' \
+            -ar 16000 -ac 1 -c:a pcm_s16le "$RUNNER_TEMP/two-voice-smoke.wav"
+          timeout --signal=TERM 180 strace -f -qq -e trace=network -o "$RUNNER_TEMP/network.trace" \
+            target/debug/speech-studio --cli diarize-speakers \
+            "$RUNNER_TEMP/two-voice-smoke.wav" "$RUNNER_TEMP/turns.json" ''
+          ! grep -Eq 'socket\(AF_INET|socket\(AF_INET6|connect\(' "$RUNNER_TEMP/network.trace"
+          python3 - "$RUNNER_TEMP/turns.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as source:
+              result = json.load(source)
+          assert result["schema_version"] == 1
+          assert result["engine"] == "sherpa-onnx 2.0.3"
+          assert result["model_pack"] == "speaker-diarization-pyannote3-3dspeaker-v1"
+          assert isinstance(result["speaker_count"], int) and result["speaker_count"] >= 0
+          assert isinstance(result["turns"], list)
+          print(f"Offline inference smoke returned {result['speaker_count']} speaker(s), {len(result['turns'])} turns")
+          PY
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: speech-studio-offline-diarization-linux-x64-unsigned
+          path: ${{ runner.temp }}/diarization-pack/speaker-diarization-pyannote3-3dspeaker-v1.zip
+          if-no-files-found: error
+          retention-days: 14
