@@ -151,6 +151,29 @@ class WhisperModelPackTests(unittest.TestCase):
             self.assertFalse(destination.exists())
             self.assertFalse(destination.with_name("model.bin.partial").exists())
 
+    def test_pack_build_can_select_exactly_one_model_variant(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            downloaded = []
+
+            def fake_download(model_id, destination):
+                downloaded.append(model_id)
+                destination.write_bytes(b"fixture")
+                return destination
+
+            def fake_build(model_path, archive_path, model_id):
+                archive_path.write_bytes(model_id.encode())
+
+            with mock.patch.object(
+                downloader, "download_verified", side_effect=fake_download
+            ), mock.patch.object(downloader, "build_pack", side_effect=fake_build):
+                outputs = downloader.create_packs(output, ["whisper-tiny-en"])
+
+            self.assertEqual(downloaded, ["whisper-tiny-en"])
+            self.assertEqual([path.name for path in outputs], ["whisper-tiny-en.zip"])
+            with self.assertRaisesRegex(ValueError, "unique"):
+                downloader.create_packs(output, ["whisper-tiny-en", "whisper-tiny-en"])
+
 
 if __name__ == "__main__":
     unittest.main()

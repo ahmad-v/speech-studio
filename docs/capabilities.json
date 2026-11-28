@@ -195,7 +195,7 @@
       "targets": [
         "x86_64-unknown-linux-gnu"
       ],
-      "fixture_status": "Linux x86_64 offline app-relative English pack smoke passed; background streaming hash verification tests added and hosted ASR/UI verification pending"
+      "fixture_status": "Linux x86_64 offline app-relative English inference smoke passed; native optional-ASR build/tests passed on five targets; local pack installer and bundle extractor tests pass; ASR distribution workflow has not run; multilingual WER/CER and CPU resource measurements remain open"
     },
     {
       "operation": "replace-cue-text",

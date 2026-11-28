@@ -59,13 +59,18 @@ def download_verified(model_id, destination, opener=urllib.request.urlopen):
     return destination
 
 
-def create_packs(output_dir):
+def create_packs(output_dir, model_ids=None):
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    model_ids = tuple(MANIFESTS) if model_ids is None else tuple(model_ids)
+    if not model_ids or any(model_id not in MANIFESTS for model_id in model_ids):
+        raise ValueError("select one or more supported model IDs")
+    if len(set(model_ids)) != len(model_ids):
+        raise ValueError("model IDs must be unique")
     with tempfile.TemporaryDirectory(prefix="speech-models-") as temporary:
         work = Path(temporary)
         outputs = []
-        for model_id in MANIFESTS:
+        for model_id in model_ids:
             manifest, _ = load_manifest(model_id)
             model = download_verified(model_id, work / manifest["file"])
             archive = output_dir / f"{model_id}.zip"
@@ -77,9 +82,15 @@ def create_packs(output_dir):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output_dir", type=Path)
+    parser.add_argument(
+        "--model-id",
+        action="append",
+        choices=tuple(MANIFESTS),
+        help="build only selected models; repeat to include multiple variants",
+    )
     args = parser.parse_args()
     try:
-        for archive in create_packs(args.output_dir):
+        for archive in create_packs(args.output_dir, args.model_id):
             print(archive)
     except (OSError, ValueError) as error:
         parser.error(str(error))
