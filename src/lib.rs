@@ -7,6 +7,10 @@ pub mod audio_ui;
 mod cue_edit;
 #[cfg(any(feature = "audio-playback", test))]
 mod recording;
+#[cfg(feature = "translation")]
+mod translation;
+#[cfg(all(feature = "gui", feature = "translation"))]
+pub mod translation_ui;
 #[cfg(feature = "tts")]
 mod tts;
 use localwright_core::*;
@@ -30,6 +34,10 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"synthesize-speech",label:"Synthesize English speech",hint:"Synthesize English text offline with Kitten Nano. Enter JSON {\"text\":\"Hello\",\"voice\":\"Jasper\",\"speed\":1.0}; choose a new .wav output. Requires the separately installed, SHA-256 verified model pack. Eight English voices; not voice cloning."},
  #[cfg(feature="tts")]
  Operation{id:"verify-tts-pack",label:"Verify offline TTS voice pack",hint:"Verify the application-relative Kitten model, eight-voice data, tokens, CMUdict-derived lexicon, and notices against the pinned SHA-256 manifest. Leave input, output and parameter blank."},
+ #[cfg(feature="translation")]
+ Operation{id:"translate-text-en-fr",label:"Translate English text to French",hint:"Translate a UTF-8 text file offline using the pinned English-to-French OPUS-MT Marian model. Select an existing .txt input and a new .txt output. Requires the separately installed, hash-verified `opus-mt-en-fr-v1` model pack beside the application. This initial pack supports English→French only; generated translations should be reviewed."},
+ #[cfg(feature="translation")]
+ Operation{id:"verify-translation-pack",label:"Verify offline translation pack",hint:"Verify the application-relative English-to-French model, SentencePiece tokenizers, provenance card and pinned SHA-256 manifest. Leave input, output and parameter blank."},
  #[cfg(feature="audio-playback")]
  Operation{id:"play-wav",label:"Play local audio",hint:"Open and play local WAV, FLAC, MP3, OGG, AAC/M4A or AIFF audio (up to 8 channels, 8–192 kHz, 10 minutes, 128 MiB input and 256 MiB decoded memory). The separate native audio workspace also supports transcript cue selection, multi-line cue text editing, literal find/replace, timing edits, waveform seeking, and undo/redo. Leave output and parameter blank. Cancel stops playback. Format support depends on the bundled native decoders."},
  Operation{id:"detect-voice-activity",label:"Detect voice activity",hint:"Estimate active intervals from mono 16 kHz PCM16 WAV energy. Results are an energy heuristic, not neural VAD or diarization. Choose a new .json output."},
@@ -1405,6 +1413,50 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
         #[cfg(feature = "tts")]
         "verify-tts-pack" => {
             out.preview = tts::verify_private_tts_pack(&j)?;
+        }
+        #[cfg(feature = "translation")]
+        "verify-translation-pack" => {
+            out.preview = translation::verify_private_pack(&j)?;
+        }
+        #[cfg(feature = "translation")]
+        "translate-text-en-fr" => {
+            if !r.parameter.trim().is_empty() {
+                return Err(Error::input("This model currently supports fixed English-to-French translation; parameters are not accepted"));
+            }
+            if r.input.extension().and_then(|value| value.to_str()) != Some("txt")
+                || r.output.extension().and_then(|value| value.to_str()) != Some("txt")
+            {
+                return Err(Error::input(
+                    "Choose a UTF-8 .txt input and a new .txt output",
+                ));
+            }
+            let input = String::from_utf8(read_bounded(&r.input, 8 * 1024)?)
+                .map_err(|_| Error::input("Translation input must be UTF-8"))?;
+            let translated = translation::translate_english_to_french(&input, &j)?;
+            j.check()?;
+            let mut output = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&r.output)
+                .map_err(|error| {
+                    if error.kind() == std::io::ErrorKind::AlreadyExists {
+                        Error::input("Translation output already exists; choose a new path")
+                    } else {
+                        err(error)
+                    }
+                })?;
+            use std::io::Write as _;
+            if let Err(error) = output.write_all(translated.as_bytes()) {
+                drop(output);
+                let _ = std::fs::remove_file(&r.output);
+                return Err(err(error));
+            }
+            out.preview = format!(
+                "Translated English text to French ({} characters)",
+                translated.chars().count()
+            );
+            out.warnings.push("Translation uses one pinned English-to-French model with greedy decoding. Review names, numbers, idioms and technical terminology; broad translation quality has not been independently validated.".into());
+            out.written = Some(r.output);
         }
         #[cfg(feature = "audio-playback")]
         "play-wav" => return play_wav(&r.input, &j),

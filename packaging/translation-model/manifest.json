@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "id": "opus-mt-en-fr-v1",
+  "version": "1.0.0",
+  "model_repository": "Helsinki-NLP/opus-mt-en-fr",
+  "model_revision": "dd7f6540a7a48a7f4db59e5c0b9c42c8eea67f18",
+  "model_license": "Apache-2.0 (model card metadata at the pinned upstream revision)",
+  "source_model_file": "pytorch_model.bin",
+  "source_model_sha256": "cc1de10b49342ad2f33e06bc4474ddd6eaca278474903c4a8636ce15680d64de",
+  "conversion_toolchain": "PyTorch 2.5.1+cpu; safetensors 0.6.2; packaging 25.0; NumPy 1.26.4",
+  "tokenizer_repository": "Helsinki-NLP/opus-mt-en-fr",
+  "tokenizer_revision": "dd7f6540a7a48a7f4db59e5c0b9c42c8eea67f18",
+  "language_pair": "English (en) to French (fr)",
+  "files": [
+    {
+      "name": "model.safetensors",
+      "size_bytes": 300803144,
+      "sha256": "174014ba6a746e5d8d1f31470692131c55786dff4daf320cfb882593d674646b"
+    },
+    {
+      "name": "config.json",
+      "size_bytes": 1416,
+      "sha256": "df92c371911b45282caac6101fe7e7f5d5e9af7f9a99356067ffe306278ce72b"
+    },
+    {
+      "name": "source.spm",
+      "size_bytes": 778395,
+      "sha256": "173e9f493a668fe396d599e28d414a201193094e6ffd7a4678e5aab0f6d3d838"
+    },
+    {
+      "name": "target.spm",
+      "size_bytes": 802397,
+      "sha256": "78d0e717c77053f1c4b856d8661d9cb87c64f083a35418c087b9146300e4f585"
+    },
+    {
+      "name": "MODEL_CARD.md",
+      "size_bytes": 1209,
+      "sha256": "695f64a07925db14e3e2f9d0f2074ef8ac86e4d43939451fae5603683dba90a6"
+    },
+    {
+      "name": "LICENSE-APACHE-2.0",
+      "size_bytes": 11358,
+      "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+    },
+    {
+      "name": "THIRD_PARTY_NOTICE.txt",
+      "size_bytes": 513,
+      "sha256": "731aefbe83291909a685a108ed7979c67773e8e3049ee2558f4122d9b1b3b2eb"
+    }
+  ]
+}
