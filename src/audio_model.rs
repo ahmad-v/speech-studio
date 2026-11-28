@@ -307,14 +307,26 @@ fn validate_relative_audio_path(path: &str) -> Result<&str, String> {
 
 pub(crate) struct CueHistory {
     current: Vec<Segment>,
-    undo: Vec<Vec<Segment>>,
-    redo: Vec<Vec<Segment>>,
+    transcript_offset_ms: i64,
+    undo: Vec<CueSnapshot>,
+    redo: Vec<CueSnapshot>,
+}
+
+struct CueSnapshot {
+    cues: Vec<Segment>,
+    transcript_offset_ms: i64,
 }
 
 impl CueHistory {
     pub(crate) fn new(cues: Vec<Segment>) -> Self {
+        Self::with_transcript_offset(cues, 0)
+    }
+
+    pub(crate) fn with_transcript_offset(cues: Vec<Segment>, transcript_offset_ms: i64) -> Self {
+        debug_assert!(validate_transcript_offset(transcript_offset_ms).is_ok());
         Self {
             current: cues,
+            transcript_offset_ms,
             undo: Vec::new(),
             redo: Vec::new(),
         }
@@ -322,6 +334,20 @@ impl CueHistory {
 
     pub(crate) fn cues(&self) -> &[Segment] {
         &self.current
+    }
+
+    pub(crate) fn transcript_offset_ms(&self) -> i64 {
+        self.transcript_offset_ms
+    }
+
+    pub(crate) fn set_transcript_offset(&mut self, offset_ms: i64) -> Result<(), String> {
+        validate_transcript_offset(offset_ms)?;
+        if offset_ms != self.transcript_offset_ms {
+            self.push_current_to_undo();
+            self.transcript_offset_ms = offset_ms;
+            self.redo.clear();
+        }
+        Ok(())
     }
 
     #[cfg(all(feature = "gui", feature = "audio-playback"))]
@@ -422,19 +448,31 @@ impl CueHistory {
         if parse(&draft).map_err(|error| error.message)? != changed {
             return Err(invalid_message.into());
         }
-        self.undo
-            .push(std::mem::replace(&mut self.current, changed));
-        if self.undo.len() > MAX_HISTORY {
-            self.undo.remove(0);
-        }
+        self.push_current_to_undo();
+        self.current = changed;
         self.redo.clear();
         Ok(())
     }
 
+    fn snapshot(&self) -> CueSnapshot {
+        CueSnapshot {
+            cues: self.current.clone(),
+            transcript_offset_ms: self.transcript_offset_ms,
+        }
+    }
+
+    fn push_current_to_undo(&mut self) {
+        self.undo.push(self.snapshot());
+        if self.undo.len() > MAX_HISTORY {
+            self.undo.remove(0);
+        }
+    }
+
     pub(crate) fn undo(&mut self) -> bool {
         if let Some(previous) = self.undo.pop() {
-            self.redo
-                .push(std::mem::replace(&mut self.current, previous));
+            self.redo.push(self.snapshot());
+            self.current = previous.cues;
+            self.transcript_offset_ms = previous.transcript_offset_ms;
             true
         } else {
             false
@@ -443,7 +481,9 @@ impl CueHistory {
 
     pub(crate) fn redo(&mut self) -> bool {
         if let Some(next) = self.redo.pop() {
-            self.undo.push(std::mem::replace(&mut self.current, next));
+            self.push_current_to_undo();
+            self.current = next.cues;
+            self.transcript_offset_ms = next.transcript_offset_ms;
             true
         } else {
             false
@@ -538,6 +578,25 @@ mod tests {
         assert!(parse_transcript_offset("1.5").is_err());
         assert!(parse_transcript_offset("999999999999999999999").is_err());
         assert!(parse_transcript_offset("360000001").is_err());
+    }
+
+    #[test]
+    fn transcript_offset_uses_the_shared_bounded_undo_redo_history() {
+        let cues = crate::parse("1\n00:00:00,000 --> 00:00:01,000\nHello").unwrap();
+        let mut history = CueHistory::new(cues);
+        history.set_transcript_offset(250).unwrap();
+        history.set_text(0, "Hello again").unwrap();
+
+        assert!(history.undo());
+        assert_eq!(history.cues()[0].text, "Hello");
+        assert_eq!(history.transcript_offset_ms(), 250);
+        assert!(history.undo());
+        assert_eq!(history.transcript_offset_ms(), 0);
+        assert!(history.redo());
+        assert_eq!(history.transcript_offset_ms(), 250);
+        assert!(history.redo());
+        assert_eq!(history.cues()[0].text, "Hello again");
+        assert_eq!(history.transcript_offset_ms(), 250);
     }
 
     #[test]

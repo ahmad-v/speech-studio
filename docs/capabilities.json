@@ -113,7 +113,7 @@
       "targets": [
         "x86_64-unknown-linux-gnu"
       ],
-      "fixture_status": "Existing audio project v2 relative-link round-trip, v1 compatibility and invalid path rejection tests passed; transcript offset mapping, bounds, v3 round-trip and v1/v2 migration tests added pending hosted execution; transcript edit, replacement, history and filter tests passed on prior code head d74b7a8; recording buffer/finalization/no-overwrite tests are hardware-independent; host device enumeration, physical input capture and playback are unverified"
+      "fixture_status": "Existing audio project v2 relative-link round-trip, v1 compatibility and invalid path rejection tests passed; transcript offset mapping, bounds, v3 round-trip, v1/v2 migration and shared offset undo/redo tests added pending hosted execution; transcript edit, replacement, history and filter tests passed on prior code head d74b7a8; recording buffer/finalization/no-overwrite tests are hardware-independent; host device enumeration, physical input capture and playback are unverified"
     },
     {
       "operation": "audio-info",

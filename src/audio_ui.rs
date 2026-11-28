@@ -174,7 +174,6 @@ struct State {
     page_start: usize,
     cue_start_text: String,
     cue_end_text: String,
-    transcript_offset_ms: i64,
     transcript_offset_text: String,
     cue_text: text_editor::Content,
     find_text: String,
@@ -211,7 +210,6 @@ impl State {
                 page_start: 0,
                 cue_start_text: String::new(),
                 cue_end_text: String::new(),
-                transcript_offset_ms: 0,
                 transcript_offset_text: "0".into(),
                 cue_text: text_editor::Content::new(),
                 find_text: String::new(),
@@ -297,8 +295,13 @@ impl State {
             Message::TranscriptPicked(Some(path)) => match load_transcript(&path) {
                 Ok(project) => {
                     let count = project.segments.len();
-                    self.cues = CueHistory::new(project.segments);
-                    self.linked_audio = project.audio_path.map(|media| {
+                    let crate::audio_model::DecodedWorkspaceProject {
+                        segments,
+                        audio_path,
+                        transcript_offset_ms,
+                    } = project;
+                    self.cues = CueHistory::with_transcript_offset(segments, transcript_offset_ms);
+                    self.linked_audio = audio_path.map(|media| {
                         if media.is_absolute() {
                             media
                         } else {
@@ -309,8 +312,7 @@ impl State {
                     self.page_start = 0;
                     self.cue_start_text.clear();
                     self.cue_end_text.clear();
-                    self.transcript_offset_ms = project.transcript_offset_ms;
-                    self.transcript_offset_text = project.transcript_offset_ms.to_string();
+                    self.transcript_offset_text = transcript_offset_ms.to_string();
                     self.cue_text = text_editor::Content::new();
                     self.find_text.clear();
                     self.replacement_text.clear();
@@ -344,7 +346,7 @@ impl State {
                     &path,
                     self.cues.cues(),
                     self.view.audio_path.as_deref(),
-                    self.transcript_offset_ms,
+                    self.cues.transcript_offset_ms(),
                 ) {
                     Ok(()) => {
                         self.linked_audio = self.view.audio_path.as_ref().and_then(|audio| {
@@ -378,8 +380,9 @@ impl State {
                     self.cue_start_text = stamp(start);
                     self.cue_end_text = stamp(end);
                     self.cue_text = text_editor::Content::with_text(&text);
-                    let audio_position = audio_position_for_cue(start, self.transcript_offset_ms)
-                        .min(self.view.duration_ms);
+                    let audio_position =
+                        audio_position_for_cue(start, self.cues.transcript_offset_ms())
+                            .min(self.view.duration_ms);
                     self.send(Command::Seek(audio_position));
                 }
             }
@@ -397,11 +400,15 @@ impl State {
             Message::TranscriptOffsetChanged(value) => self.transcript_offset_text = value,
             Message::ApplyTranscriptOffset => {
                 match parse_transcript_offset(&self.transcript_offset_text) {
-                    Ok(offset) => {
-                        self.transcript_offset_ms = offset;
-                        self.transcript_offset_text = offset.to_string();
-                        self.notice = format!("Transcript offset applied: {offset} ms.");
-                    }
+                    Ok(offset) => match self.cues.set_transcript_offset(offset) {
+                        Ok(()) => {
+                            self.transcript_offset_text = offset.to_string();
+                            self.notice = format!("Transcript offset applied: {offset} ms.");
+                        }
+                        Err(error) => {
+                            self.notice = format!("Transcript offset was not changed: {error}");
+                        }
+                    },
                     Err(error) => {
                         self.notice = format!("Transcript offset was not changed: {error}");
                     }
@@ -479,6 +486,7 @@ impl State {
             Message::UndoCueTiming => {
                 self.notice = if self.cues.undo() {
                     self.refresh_selected_timing();
+                    self.transcript_offset_text = self.cues.transcript_offset_ms().to_string();
                     "Transcript edit undone.".into()
                 } else {
                     "No transcript edit to undo.".into()
@@ -487,6 +495,7 @@ impl State {
             Message::RedoCueTiming => {
                 self.notice = if self.cues.redo() {
                     self.refresh_selected_timing();
+                    self.transcript_offset_text = self.cues.transcript_offset_ms().to_string();
                     "Transcript edit redone.".into()
                 } else {
                     "No transcript edit to redo.".into()
@@ -525,7 +534,7 @@ impl State {
                     if let Some(active) = active_cue_at_audio_position(
                         self.cues.cues(),
                         self.view.position_ms,
-                        self.transcript_offset_ms,
+                        self.cues.transcript_offset_ms(),
                     ) {
                         let page_start = active / CUES_PER_PAGE * CUES_PER_PAGE;
                         if page_start != self.page_start {
@@ -580,8 +589,11 @@ impl State {
         .width(Length::Fill)
         .height(Length::Fixed(160.0));
         let cues = self.cues.cues();
-        let active =
-            active_cue_at_audio_position(cues, self.view.position_ms, self.transcript_offset_ms);
+        let active = active_cue_at_audio_position(
+            cues,
+            self.view.position_ms,
+            self.cues.transcript_offset_ms(),
+        );
         let matching_indices = matching_cue_indices(cues, &self.find_text);
         let visible_cues = matching_indices
             .iter()
