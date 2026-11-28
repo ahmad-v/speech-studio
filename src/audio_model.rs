@@ -653,7 +653,7 @@ mod tests {
             }])
             .is_err());
         assert_eq!(history.cues(), original);
-        assert!(!history.can_undo());
+        assert!(!history.undo());
     }
 
     #[test]
