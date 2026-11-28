@@ -90,7 +90,8 @@ pub(crate) fn active_cue(cues: &[Segment], position_ms: u64) -> Option<usize> {
         .position(|cue| cue.start <= position_ms && position_ms < cue.end)
 }
 
-pub(crate) fn decode_project(bytes: &[u8], is_json: bool) -> Result<Vec<Segment>, String> {
+#[cfg(test)]
+fn decode_project(bytes: &[u8], is_json: bool) -> Result<Vec<Segment>, String> {
     decode_workspace_project(bytes, is_json).map(|project| project.segments)
 }
 
