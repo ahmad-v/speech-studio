@@ -120,6 +120,15 @@ jobs:
           cargo check --locked --all-targets --all-features --target "$BUILD_TARGET"
           cargo test --locked --all-features --target "$BUILD_TARGET"
 
+      - name: Preserve verified Windows x64 Whisper ABI bindings
+        if: success() && matrix.target == 'x86_64-pc-windows-msvc'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: whisper-bindings-windows-msvc-x64
+          path: target/x86_64-pc-windows-msvc/debug/build/whisper-rs-sys-*/out/bindings.rs
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Inspect generated Whisper bindings after Windows ARM failure
         if: failure() && matrix.target == 'aarch64-pc-windows-msvc'
         run: |
