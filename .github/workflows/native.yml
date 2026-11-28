@@ -119,3 +119,18 @@ jobs:
         run: |
           cargo check --locked --all-targets --all-features --target "$BUILD_TARGET"
           cargo test --locked --all-features --target "$BUILD_TARGET"
+
+      - name: Inspect generated Whisper bindings after Windows ARM failure
+        if: failure() && matrix.target == 'aarch64-pc-windows-msvc'
+        run: |
+          shopt -s nullglob
+          bindings=(target/aarch64-pc-windows-msvc/debug/build/whisper-rs-sys-*/out/bindings.rs)
+          if ((${#bindings[@]} == 0)); then
+            echo "No generated whisper-rs-sys bindings were left in the target directory."
+            exit 0
+          fi
+          for file in "${bindings[@]}"; do
+            echo "Generated binding: $file"
+            grep -n -A14 -B3 'struct whisper_full_params' "$file" || true
+            grep -n -E 'Size of whisper_full_params|Alignment of whisper_full_params|Offset of field: whisper_full_params' "$file" || true
+          done
