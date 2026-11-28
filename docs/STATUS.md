@@ -35,7 +35,7 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 | export-lrc | Export cue start times and text to LRC | Linux fixture-tested |
 | open-json / export-json | Versioned UTF-8 transcript exchange with millisecond timings | Linux fixture and CLI-tested |
 | export-txt | Plain transcript text | Linux fixture-tested |
-| transcribe | Optional CPU whisper-rs adapter, private English or multilingual Tiny pack, or an explicit model path; multilingual pack pins its source bytes and uses language auto-detection | Offline ASR pack workflow 46127520782 passed and uploaded both model packs (155,402,407 bytes combined; 14-day artifact retention). Optional ASR/audio compile and tests passed on Linux x64/ARM64, Windows x64/ARM64 and macOS Apple Silicon at code head `d74b7a8`. Multilingual inference accuracy, WER/CER and runtime CPU memory/performance remain unmeasured |
+| transcribe | Optional CPU whisper-rs adapter, private English or multilingual Tiny pack, or an explicit model path; multilingual pack pins its source bytes and uses language auto-detection. The native workspace checks the selected app-relative pack size and SHA-256 off the UI thread before enabling inference | Offline ASR pack workflow 46127520782 passed and uploaded both model packs (155,402,407 bytes combined; 14-day artifact retention). Model-readiness UI and streaming integrity verification added on this branch; hosted verification pending. Multilingual inference accuracy, WER/CER and runtime CPU memory/performance remain unmeasured |
 
 ## Known gaps
 

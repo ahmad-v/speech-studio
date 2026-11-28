@@ -190,12 +190,12 @@
     },
     {
       "operation": "transcribe",
-      "description": "Optional CPU Whisper adapter with app-relative English Tiny or multilingual Tiny packs; multilingual model language auto-detection is enabled",
+      "description": "Optional CPU Whisper adapter with app-relative English Tiny or multilingual Tiny packs; the native workspace verifies the selected manifest byte count and SHA-256 in the background before enabling inference; multilingual mode requests automatic language detection",
       "status": "implemented-unverified",
       "targets": [
         "x86_64-unknown-linux-gnu"
       ],
-      "fixture_status": "Linux x86_64 offline app-relative English pack smoke passed"
+      "fixture_status": "Linux x86_64 offline app-relative English pack smoke passed; background streaming hash verification tests added and hosted ASR/UI verification pending"
     },
     {
       "operation": "replace-cue-text",
