@@ -108,12 +108,12 @@
     },
     {
       "operation": "play-wav",
-      "description": "Native Iced workspace for bounded offline WAV/FLAC/MP3/OGG/AAC/M4A/AIFF playback, selectable local input devices, bounded PCM16 WAV recording with live elapsed status and stop/finalize, waveform seeking, synchronized transcript cues with an adjustable signed offset, multiline text and timing edits, case-sensitive literal filtering and find/replace, and shared undo/redo; version 3 projects retain relative linked-audio paths and transcript offset with explicit loading and version 1/2 compatibility",
+      "description": "Native Iced workspace for bounded offline WAV/FLAC/MP3/OGG/AAC/M4A/AIFF playback, selectable local input devices, bounded PCM16 WAV recording with live elapsed status and stop/finalize, waveform seeking, synchronized transcript cues with an adjustable signed offset, multiline text and timing edits, case-sensitive literal filtering and find/replace, and shared undo/redo; version 3 projects retain relative linked-audio paths and transcript offset with explicit loading and version 1/2 compatibility; optional TTS controls generate a new WAV using a locally installed, hash-verified single-speaker English voice pack",
       "status": "implemented-unverified",
       "targets": [
         "x86_64-unknown-linux-gnu"
       ],
-      "fixture_status": "Existing audio project v2 relative-link round-trip, v1 compatibility and invalid path rejection tests passed; transcript offset mapping, bounds, v3 round-trip, v1/v2 migration and shared offset undo/redo tests added pending hosted execution; transcript edit, replacement, history and filter tests passed on prior code head d74b7a8; recording buffer/finalization/no-overwrite tests are hardware-independent; host device enumeration, physical input capture and playback are unverified"
+      "fixture_status": "Existing audio project v2 relative-link round-trip, v1 compatibility and invalid path rejection tests passed; transcript offset mapping, bounds, v3 round-trip, v1/v2 migration and shared offset undo/redo tests added pending hosted execution; transcript edit, replacement, history and filter tests passed on prior code head d74b7a8; recording buffer/finalization/no-overwrite tests are hardware-independent; host device enumeration, physical input capture and playback are unverified; TTS GUI added in PR #32, native synthesis requires hosted all-features verification and the external voice pack remains undistributed pending model-weight license review"
     },
     {
       "operation": "audio-info",
@@ -385,6 +385,20 @@
         "x86_64-unknown-linux-gnu"
       ],
       "fixture_status": "Linux cue-edit fixtures passed; hosted matrix pending"
+    },
+    {
+      "operation": "synthesize-speech",
+      "description": "Experimental offline English VITS synthesis to a new mono PCM16 WAV, with bounded text/output, speed control, progress and cooperative cancellation; single-speaker model pack is resolved beside the application and verified against pinned SHA-256 values",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "Request validation and deterministic asset packer hash/path safety tests pass; Rust compilation and inference with the real voice are pending hosted checks; upstream MODEL_CARD states the dataset is public domain but does not specify model-weight redistribution rights, so no voice pack is bundled or published"
+    },
+    {
+      "operation": "verify-tts-pack",
+      "description": "Verify application-relative offline English TTS model/config/token/model-card files against the embedded size and SHA-256 manifest",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "Manifest metadata and deterministic tamper/symlink verification tests added; hosted Rust execution pending"
     }
   ]
 }

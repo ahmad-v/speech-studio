@@ -111,7 +111,7 @@ jobs:
           cargo test --locked --target "$BUILD_TARGET"
           cargo test --locked --no-default-features --target "$BUILD_TARGET"
 
-      - name: Verify optional ASR and audio builds and tests on native target
+      - name: Verify optional ASR, TTS, and audio builds and tests on native target
         env:
           BUILD_TARGET: ${{ matrix.target }}
         run: |

@@ -93,3 +93,6 @@ jobs:
           cargo check --locked --all-targets
           cargo test --locked
           cargo clippy --locked --all-targets -- -D warnings
+          cargo check --locked --all-targets --features tts
+          cargo test --locked --features tts
+          cargo clippy --locked --all-targets --features tts -- -D warnings
