@@ -350,6 +350,7 @@ impl CueHistory {
         Ok(())
     }
 
+    #[cfg(feature = "asr")]
     pub(crate) fn replace_all(&mut self, changed: Vec<Segment>) -> Result<(), String> {
         if changed.is_empty() || changed.len() > MAX_CUES {
             return Err("Transcript must contain between 1 and 20,000 cues".into());
@@ -620,6 +621,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "asr")]
     fn replacing_transcript_is_validated_and_undoable_with_offset() {
         let original = crate::parse("1\n00:00:01,000 --> 00:00:02,000\nOriginal").unwrap();
         let replacement = crate::parse("1\n00:00:00,500 --> 00:00:01,500\nRecognized").unwrap();
@@ -638,6 +640,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "asr")]
     fn replacing_transcript_rejects_empty_or_invalid_cues_without_mutation() {
         let original = crate::parse("1\n00:00:00,000 --> 00:00:01,000\nOriginal").unwrap();
         let mut history = CueHistory::new(original.clone());

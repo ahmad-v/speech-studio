@@ -778,7 +778,7 @@ impl State {
 
         scrollable(
             container({
-                let mut controls = column![
+                let controls = column![
                     row![
                         text("Speech Studio audio workspace").size(24),
                         button("Open audio…").on_press(Message::OpenDialog),
@@ -927,9 +927,7 @@ impl State {
                 ]
                 .spacing(18);
                 #[cfg(feature = "asr")]
-                {
-                    controls = controls.push(asr_controls);
-                }
+                let controls = controls.push(asr_controls);
                 controls
             })
             .width(Length::Fill)
