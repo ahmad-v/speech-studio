@@ -213,6 +213,12 @@ struct State {
     transcription_job: Job,
     #[cfg(feature = "asr")]
     transcribing: bool,
+    #[cfg(feature = "asr")]
+    model_check_job: Job,
+    #[cfg(feature = "asr")]
+    model_checking: bool,
+    #[cfg(feature = "asr")]
+    model_status: Option<std::result::Result<String, String>>,
 }
 
 impl State {
@@ -232,6 +238,12 @@ impl State {
             let _ = commands.send(Command::RefreshInputs);
         }
         let view = lock_snapshot(&snapshot).clone();
+        #[cfg(feature = "asr")]
+        let model_check_job = Job::new();
+        #[cfg(feature = "asr")]
+        let initial_task = model_status_task(AsrModel::EnglishTiny, model_check_job.clone());
+        #[cfg(not(feature = "asr"))]
+        let initial_task = Task::none();
         (
             Self {
                 commands,
@@ -255,8 +267,14 @@ impl State {
                 transcription_job: Job::new(),
                 #[cfg(feature = "asr")]
                 transcribing: false,
+                #[cfg(feature = "asr")]
+                model_check_job,
+                #[cfg(feature = "asr")]
+                model_checking: true,
+                #[cfg(feature = "asr")]
+                model_status: None,
             },
-            Task::none(),
+            initial_task,
         )
     }
 
@@ -296,11 +314,36 @@ impl State {
             }
             Message::FilePicked(None) => {}
             #[cfg(feature = "asr")]
-            Message::AsrModelChanged(model) => self.asr_model = model,
+            Message::AsrModelChanged(model) => {
+                self.model_check_job.cancel();
+                self.model_check_job = Job::new();
+                self.asr_model = model;
+                self.model_status = None;
+                self.model_checking = true;
+                return model_status_task(model, self.model_check_job.clone());
+            }
+            #[cfg(feature = "asr")]
+            Message::ModelStatusChecked(model, result) => {
+                if self.asr_model == model {
+                    self.model_checking = false;
+                    self.model_status = Some(result.clone());
+                    self.notice = match result {
+                        Ok(status) => format!("{}: {status}.", model),
+                        Err(error) => format!("{} is unavailable: {error}.", model),
+                    };
+                }
+            }
             #[cfg(feature = "asr")]
             Message::Transcribe => {
                 if self.transcribing {
                     self.notice = "A transcription job is already active.".into();
+                } else if self.model_checking
+                    || !self
+                        .model_status
+                        .as_ref()
+                        .is_some_and(|status| status.is_ok())
+                {
+                    self.notice = "Wait for the selected model pack to finish verification.".into();
                 } else if let Some(path) = self.view.audio_path.clone() {
                     let job = Job::new();
                     self.transcription_job = job.clone();
@@ -749,6 +792,29 @@ impl State {
             )
         };
         #[cfg(feature = "asr")]
+        let model_status = if self.model_checking {
+            format!("Verifying {} beside the application…", self.asr_model)
+        } else {
+            match self.model_status.as_ref() {
+                Some(Ok(status)) => status.clone(),
+                Some(Err(error)) => format!("Pack unavailable: {error}"),
+                None => "Model pack status has not been checked.".into(),
+            }
+        };
+        #[cfg(feature = "asr")]
+        let model_ready = !self.model_checking
+            && self
+                .model_status
+                .as_ref()
+                .is_some_and(|status| status.is_ok());
+        #[cfg(feature = "asr")]
+        let model_message = if self.transcribing {
+            "Transcription runs in the background; Whisper cancellation is checked after native inference."
+                .to_owned()
+        } else {
+            model_status
+        };
+        #[cfg(feature = "asr")]
         let asr_controls = row![
             text("Offline ASR model"),
             pick_list(
@@ -763,14 +829,12 @@ impl State {
             })
             .on_press_maybe(if self.transcribing {
                 Some(Message::CancelTranscription)
+            } else if self.view.loaded && model_ready {
+                Some(Message::Transcribe)
             } else {
-                self.view.loaded.then_some(Message::Transcribe)
+                None
             }),
-            text(if self.transcribing {
-                "Transcription runs in the background; Whisper cancellation is checked after inference."
-            } else {
-                "Offline only. The matching verified model pack must be installed beside the app."
-            }),
+            text(model_message),
         ]
         .spacing(8)
         .align_y(iced::Alignment::Center)
@@ -947,6 +1011,8 @@ impl Drop for State {
     fn drop(&mut self) {
         #[cfg(feature = "asr")]
         self.transcription_job.cancel();
+        #[cfg(feature = "asr")]
+        self.model_check_job.cancel();
         let _ = self.commands.send(Command::Shutdown);
     }
 }
@@ -965,6 +1031,22 @@ fn transcribe_task(path: PathBuf, model: AsrModel, job: Job) -> Task<Message> {
             (path, result)
         },
         |(path, result)| Message::TranscriptionFinished(path, result),
+    )
+}
+
+#[cfg(feature = "asr")]
+fn model_status_task(model: AsrModel, job: Job) -> Task<Message> {
+    Task::perform(
+        async move {
+            let result = thread::spawn(move || {
+                crate::verify_private_model_pack(model.parameter(), &job)
+                    .map_err(|error| error.message)
+            })
+            .join()
+            .unwrap_or_else(|_| Err("Model verification worker stopped unexpectedly".into()));
+            (model, result)
+        },
+        |(model, result)| Message::ModelStatusChecked(model, result),
     )
 }
 
@@ -1006,6 +1088,8 @@ enum Message {
     RedoCueTiming,
     #[cfg(feature = "asr")]
     AsrModelChanged(AsrModel),
+    #[cfg(feature = "asr")]
+    ModelStatusChecked(AsrModel, std::result::Result<String, String>),
     #[cfg(feature = "asr")]
     Transcribe,
     #[cfg(feature = "asr")]

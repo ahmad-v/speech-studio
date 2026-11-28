@@ -12,6 +12,13 @@ use localwright_core::*;
 use rodio::Source;
 #[cfg(feature = "asr")]
 use sha2::{Digest, Sha256};
+#[cfg(all(feature = "asr", feature = "gui", feature = "audio-playback"))]
+use std::fs::File;
+#[cfg(all(
+    feature = "asr",
+    any(test, all(feature = "gui", feature = "audio-playback"))
+))]
+use std::io::Read;
 #[cfg(feature = "audio-playback")]
 use std::time::Duration;
 use std::{io::Cursor, path::Path};
@@ -1021,6 +1028,82 @@ fn app_relative_model_path(executable: &Path, id: &str, file: &str) -> Result<st
 }
 
 #[cfg(feature = "asr")]
+fn model_path_stays_in_expected_directory(path: &Path, canonical: &Path) -> Result<bool> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| Error::input("Private model path has no parent directory"))?
+        .canonicalize()?;
+    Ok(canonical.parent() == Some(parent.as_path()) && canonical.file_name() == path.file_name())
+}
+
+#[cfg(all(
+    feature = "asr",
+    any(test, all(feature = "gui", feature = "audio-playback"))
+))]
+fn verify_model_reader(reader: &mut impl Read, expected_bytes: u64, job: &Job) -> Result<String> {
+    let mut digest = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    let mut total = 0u64;
+    loop {
+        job.check()?;
+        let read = reader.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        total = total
+            .checked_add(read as u64)
+            .filter(|bytes| *bytes <= expected_bytes)
+            .ok_or_else(|| Error::input("Model pack exceeds the manifest byte count"))?;
+        digest.update(&buffer[..read]);
+    }
+    if total != expected_bytes {
+        return Err(Error::input("Model pack size does not match its manifest"));
+    }
+    Ok(format!("{:x}", digest.finalize()))
+}
+
+/// Verify a bundled private model pack without loading the complete weights into RAM.
+#[cfg(all(feature = "asr", feature = "gui", feature = "audio-playback"))]
+pub(crate) fn verify_private_model_pack(parameter: &str, job: &Job) -> Result<String> {
+    let manifest_text = private_model_manifest(parameter)
+        .ok_or_else(|| Error::input("Unknown private Whisper model selection"))?;
+    let manifest: serde_json::Value = serde_json::from_str(manifest_text)?;
+    let id = manifest["id"]
+        .as_str()
+        .ok_or_else(|| Error::input("Private model manifest has no ID"))?;
+    let file = manifest["file"]
+        .as_str()
+        .ok_or_else(|| Error::input("Private model manifest has no filename"))?;
+    let expected_bytes = manifest["bytes"]
+        .as_u64()
+        .ok_or_else(|| Error::input("Private model manifest has no byte count"))?;
+    let expected_hash = manifest["sha256"]
+        .as_str()
+        .filter(|hash| hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .ok_or_else(|| Error::input("Private model manifest has an invalid SHA-256"))?;
+    let executable = std::env::current_exe()?;
+    let path = app_relative_model_path(&executable, id, file)?;
+    let canonical = path
+        .canonicalize()
+        .map_err(|_| Error::input("Private Whisper model pack is missing"))?;
+    if !model_path_stays_in_expected_directory(&path, &canonical)? {
+        return Err(Error::input("Private Whisper model path must not redirect"));
+    }
+    let metadata = std::fs::metadata(&path)
+        .map_err(|_| Error::input("Private Whisper model pack is missing"))?;
+    if !metadata.is_file() || metadata.len() != expected_bytes {
+        return Err(Error::input("Private Whisper model pack size is invalid"));
+    }
+    let mut model = File::open(path)?;
+    let actual_hash = verify_model_reader(&mut model, expected_bytes, job)?;
+    if !actual_hash.eq_ignore_ascii_case(expected_hash) {
+        return Err(Error::input("Private Whisper model SHA-256 does not match"));
+    }
+    let mib = expected_bytes.div_ceil(1024 * 1024);
+    Ok(format!("Verified offline model pack ({mib} MiB)"))
+}
+
+#[cfg(feature = "asr")]
 fn model_bytes(parameter: &str) -> Result<(Vec<u8>, String)> {
     let manifest_text = private_model_manifest(parameter);
     let (path, expected, limit, language_mode) = if let Some(manifest_text) = manifest_text {
@@ -1034,7 +1117,7 @@ fn model_bytes(parameter: &str) -> Result<(Vec<u8>, String)> {
         let canonical = path
             .canonicalize()
             .map_err(|_| Error::input("Private Whisper model pack is missing"))?;
-        if canonical != path {
+        if !model_path_stays_in_expected_directory(&path, &canonical)? {
             return Err(Error::input("Private Whisper model path must not redirect"));
         }
         let language_mode = manifest["language_mode"]
@@ -2021,6 +2104,45 @@ mod tests {
         assert_eq!(
             resolved,
             canonical_directory.join("engines/whisper-tiny-multilingual/ggml-tiny.bin")
+        );
+    }
+
+    #[cfg(feature = "asr")]
+    #[test]
+    fn model_path_verification_accepts_local_files_and_rejects_redirected_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let engines = directory.path().join("engines/whisper-tiny-en");
+        std::fs::create_dir_all(&engines).unwrap();
+        let expected_path = engines.join("ggml-tiny.en.bin");
+        std::fs::write(&expected_path, b"model").unwrap();
+        let resolved = expected_path.canonicalize().unwrap();
+        assert!(model_path_stays_in_expected_directory(&expected_path, &resolved).unwrap());
+
+        let other_path = directory.path().join("other.bin");
+        std::fs::write(&other_path, b"other").unwrap();
+        assert!(!model_path_stays_in_expected_directory(
+            &expected_path,
+            &other_path.canonicalize().unwrap()
+        )
+        .unwrap());
+    }
+
+    #[cfg(feature = "asr")]
+    #[test]
+    fn model_pack_verification_streams_bytes_and_checks_the_declared_size() {
+        let bytes = b"small model fixture";
+        let expected = format!("{:x}", Sha256::digest(bytes));
+        let digest =
+            verify_model_reader(&mut Cursor::new(bytes), bytes.len() as u64, &Job::new()).unwrap();
+        assert_eq!(digest, expected);
+        assert!(
+            verify_model_reader(&mut Cursor::new(bytes), bytes.len() as u64 + 1, &Job::new())
+                .is_err()
+        );
+        let cancelled = Job::new();
+        cancelled.cancel();
+        assert!(
+            verify_model_reader(&mut Cursor::new(bytes), bytes.len() as u64, &cancelled).is_err()
         );
     }
 
