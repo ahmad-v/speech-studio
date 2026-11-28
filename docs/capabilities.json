@@ -399,6 +399,20 @@
       "status": "implemented-unverified",
       "targets": [],
       "fixture_status": "Pack assembly, pinned asset/hash verification and offline inference smoke passed in Integration run 46177120953; extracted installed-bundle lifecycle remains unverified."
+    },
+    {
+      "operation": "translate-text-en-fr",
+      "description": "Native editable English-to-French text translation with Candle Marian inference and a separate hash-verified offline OPUS-MT model pack; bounded input/output and cancellation between tokens",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "Offline pack assembler/install-verifier Python tests pass. Actual model-backed clean-host inference and language-quality validation are pending the hosted pinned-asset smoke workflow."
+    },
+    {
+      "operation": "verify-translation-pack",
+      "description": "Verify the application-relative OPUS-MT model, SentencePiece files, source card and exact pinned manifest hashes",
+      "status": "implemented-unverified",
+      "targets": [],
+      "fixture_status": "Small-fixture pack integrity, no-overwrite installation and archive traversal rejection tests pass. Real 301 MB pack is not yet assembled or run."
     }
   ]
 }
