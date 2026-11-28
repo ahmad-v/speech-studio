@@ -35,6 +35,8 @@ pub const OPERATIONS:&[Operation]=&[
  #[cfg(feature="tts")]
  Operation{id:"diarize-speakers",label:"Diarize speakers in WAV",hint:"Offline speaker diarization for mono 16 kHz PCM16 WAV up to 10 minutes. Requires the separately installed, hash-verified pyannote/3D-Speaker pack. Writes a new speaker-labeled transcript JSON; labels distinguish speakers only within this recording and should be reviewed."},
  #[cfg(feature="tts")]
+ Operation{id:"diarize-transcript",label:"Apply speakers to transcript",hint:"Map offline diarization turns from a supported mono 16 kHz WAV onto an SRT transcript and write a separate speaker-labeled JSON. The separately installed model pack is required; review recording-local labels."},
+ #[cfg(feature="tts")]
  Operation{id:"verify-diarization-pack",label:"Verify offline speaker model pack",hint:"Verify the application-relative pyannote segmentation and 3D-Speaker embedding files, licenses, manifest, sizes and SHA-256 values. Leave input, output and parameter blank."},
  #[cfg(feature="tts")]
  Operation{id:"rename-diarized-speaker",label:"Rename diarized speaker",hint:r#"Read a diarized transcript JSON and write a new JSON output. Parameter: {"speaker_index":0,"label":"Interviewer"}. Index is zero-based. This edits only the recording-local label."#},
