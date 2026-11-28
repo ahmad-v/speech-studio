@@ -20,7 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PACK_ID = "opus-mt-en-fr-v1"
 MODEL_REV = "dd7f6540a7a48a7f4db59e5c0b9c42c8eea67f18"
 MODEL_REPO = "Helsinki-NLP/opus-mt-en-fr"
-MODEL_LICENSE = "Apache-2.0 (pinned upstream model card metadata)"
+MODEL_LICENSE = "Apache-2.0 (model card metadata at the pinned upstream revision)"
 TOKENIZER_REPO = MODEL_REPO
 ASSETS = {
     "pytorch_model.bin": (300_827_685, "cc1de10b49342ad2f33e06bc4474ddd6eaca278474903c4a8636ce15680d64de"),

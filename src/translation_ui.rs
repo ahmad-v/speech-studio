@@ -30,14 +30,17 @@ struct State {
 }
 
 impl State {
-    fn new() -> Self {
-        Self {
-            source: text_editor::Content::new(),
-            translated: text_editor::Content::new(),
-            busy: false,
-            job: Job::new(),
-            notice: "English → French · offline Marian model pack required".into(),
-        }
+    fn new() -> (Self, Task<Message>) {
+        (
+            Self {
+                source: text_editor::Content::new(),
+                translated: text_editor::Content::new(),
+                busy: false,
+                job: Job::new(),
+                notice: "English → French · offline Marian model pack required".into(),
+            },
+            Task::none(),
+        )
     }
 
     fn update(&mut self, message: Message) -> Task<Message> {
@@ -136,7 +139,7 @@ impl State {
                 if translated.trim().is_empty() {
                     self.notice = "There is no translated text to copy.".into();
                 } else {
-                    return iced::clipboard::write(translated);
+                    return iced::clipboard::write(translated).map(|()| Message::CopiedToClipboard);
                 }
             }
             Message::ExportPicked(Some((text, path))) => {
@@ -151,9 +154,12 @@ impl State {
             }
             Message::ExportPicked(None) => {}
             Message::ExportFinished(result) => {
-                self.notice =
-                    result.unwrap_or_else(|error| format!("Could not export text: {error}"));
+                self.notice = match result {
+                    Ok(()) => "Translated text exported successfully.".into(),
+                    Err(error) => format!("Could not export text: {error}"),
+                };
             }
+            Message::CopiedToClipboard => self.notice = "French text copied to clipboard.".into(),
         }
         Task::none()
     }
@@ -227,6 +233,7 @@ fn write_new_text(path: &Path, text: &str) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Debug, Clone)]
 enum Message {
     SourceAction(text_editor::Action),
     OutputAction(text_editor::Action),
@@ -239,6 +246,7 @@ enum Message {
     Copy,
     ExportPicked(Option<(String, PathBuf)>),
     ExportFinished(Result<(), String>),
+    CopiedToClipboard,
 }
 
 #[cfg(test)]

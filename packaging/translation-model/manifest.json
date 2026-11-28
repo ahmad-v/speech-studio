@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "model_repository": "Helsinki-NLP/opus-mt-en-fr",
   "model_revision": "dd7f6540a7a48a7f4db59e5c0b9c42c8eea67f18",
-  "model_license": "Apache-2.0 (pinned upstream model card metadata)",
+  "model_license": "Apache-2.0 (model card metadata at the pinned upstream revision)",
   "tokenizer_repository": "Helsinki-NLP/opus-mt-en-fr",
   "tokenizer_revision": "dd7f6540a7a48a7f4db59e5c0b9c42c8eea67f18",
   "language_pair": "English (en) to French (fr)",

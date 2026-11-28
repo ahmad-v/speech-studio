@@ -363,6 +363,14 @@ mod tests {
     }
 
     #[test]
+    fn embedded_manifest_matches_the_distribution_manifest() {
+        let distributed: Manifest =
+            serde_json::from_str(include_str!("../packaging/translation-model/manifest.json"))
+                .unwrap();
+        assert_eq!(expected_manifest(), distributed);
+    }
+
+    #[test]
     fn translation_input_limits_and_empty_text_are_rejected_before_model_access() {
         let job = Job::new();
         assert!(translate_english_to_french("  ", &job).is_err());
