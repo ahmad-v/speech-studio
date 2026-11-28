@@ -39,6 +39,7 @@ jobs:
     outputs:
       model_id: ${{ steps.select.outputs.model_id }}
       model_file: ${{ steps.select.outputs.model_file }}
+      targets: ${{ steps.select.outputs.targets }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -48,16 +49,28 @@ jobs:
         id: select
         env:
           MODEL_ID: ${{ inputs.model_id }}
+          TARGET_GROUP: ${{ inputs.target_group }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import os
+          import json
           import sys
           sys.path.insert(0, "packaging")
           from whisper_model_pack import load_manifest
           model_id = os.environ["MODEL_ID"]
           manifest, _ = load_manifest(model_id)
+          targets = [
+              {"runner": "ubuntu-24.04", "target": "x86_64-unknown-linux-gnu", "arch": "X64"},
+              {"runner": "ubuntu-24.04-arm", "target": "aarch64-unknown-linux-gnu", "arch": "ARM64"},
+              {"runner": "windows-2025", "target": "x86_64-pc-windows-msvc", "arch": "X64"},
+              {"runner": "windows-11-arm", "target": "aarch64-pc-windows-msvc", "arch": "ARM64"},
+              {"runner": "macos-15", "target": "aarch64-apple-darwin", "arch": "ARM64"},
+          ]
+          if os.environ["TARGET_GROUP"] == "windows":
+              targets = [target for target in targets if "windows-msvc" in target["target"]]
           print(f"model_id={model_id}")
           print(f"model_file={manifest['file']}")
+          print(f"targets={json.dumps({'include': targets}, separators=(',', ':'))}")
           PY
 
       - name: Download and verify the pinned model and assemble pack
@@ -78,29 +91,12 @@ jobs:
 
   portable-asr:
     name: ASR portable bundle (${{ matrix.target }})
-    if: ${{ inputs.target_group == 'all' || (inputs.target_group == 'windows' && contains(matrix.target, 'windows-msvc')) }}
     needs: model-pack
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 75
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            target: x86_64-unknown-linux-gnu
-            arch: X64
-          - runner: ubuntu-24.04-arm
-            target: aarch64-unknown-linux-gnu
-            arch: ARM64
-          - runner: windows-2025
-            target: x86_64-pc-windows-msvc
-            arch: X64
-          - runner: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            arch: ARM64
-          - runner: macos-15
-            target: aarch64-apple-darwin
-            arch: ARM64
+      matrix: ${{ fromJSON(needs.model-pack.outputs.targets) }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
