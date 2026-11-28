@@ -1754,6 +1754,23 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "tts")]
+    #[test]
+    fn diarization_operations_are_registered_for_shared_workbench() {
+        for id in [
+            "verify-diarization-pack",
+            "diarize-speakers",
+            "diarize-transcript",
+            "rename-diarized-speaker",
+            "reassign-diarized-cue",
+        ] {
+            assert!(
+                OPERATIONS.iter().any(|operation| operation.id == id),
+                "missing {id}"
+            );
+        }
+    }
+
     #[cfg(all(feature = "asr", feature = "audio-playback"))]
     #[test]
     fn whisper_audio_decoder_downmixes_and_resamples_supported_wav_files() {
