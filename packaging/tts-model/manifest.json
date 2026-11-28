@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "id": "tts-en-us-kitten-nano-v0_8-int8",
+  "version": "Kitten TTS Nano 0.8 int8 / sherpa-onnx 2.0.3",
+  "engine": "sherpa-onnx",
+  "engine_version": "2.0.3",
+  "model": "KittenML/kitten-tts-nano-0.8-int8",
+  "model_revision": "84781d74e29ee25217551556398b42f80593a813",
+  "model_license": "Apache-2.0",
+  "voice_assets_license": "Apache-2.0 (same pinned upstream model repository)",
+  "source_archive": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kitten-nano-en-v0_8-int8.tar.bz2",
+  "source_archive_size_bytes": 31220690,
+  "source_archive_sha256": "6fa5be852612ce761094ba74ee6123b4fc4acfefa79bf64dc63acae4a83af2fd",
+  "source_model_files": {
+    "model.int8.onnx": {"size_bytes": 24370878, "sha256": "0ba1e21eda9c8bcc4a70ada7e0d27fefc9ba775aaa037547248ec71f9a3d9b7d"},
+    "voices.bin": {"size_bytes": 3276800, "sha256": "d520519c4a3519d44fcfcd943ed0b1e3c5da5cee0eea501d922fac1a93cd24dc"},
+    "tokens.txt": {"size_bytes": 1064, "sha256": "934a4188addc7665dd3410256bb622169242357fbb99d840d9351209b486dabb"},
+    "LICENSE": {"size_bytes": 11358, "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"}
+  },
+  "lexicon_source": "CMUdict cmudict.dict",
+  "lexicon_source_revision": "74790861f652b15e4ac49015a90074ad62a27690",
+  "lexicon_source_license": "BSD-style Carnegie Mellon University license; retain CMUDICT-LICENSE",
+  "lexicon_source_size_bytes": 3618488,
+  "lexicon_source_sha256": "81917843c7f44ce2b094ac63873c2c7a4cf802040792c455ba3ca406891c3d22",
+  "lexicon_size_bytes": 3972115,
+  "lexicon_sha256": "c7b7d6bd6db10cf90af8779c95e81e7d85d1c19a711c90b9bb3357b084b38b74",
+  "speakers": ["Jasper", "Bella", "Bruno", "Luna", "Hugo", "Rosie", "Leo", "Kiki"],
+  "language": "English (US)",
+  "sample_rate_hz": 24000,
+  "resources": {"parameters": "15 million", "model_size_bytes": 24370878, "voice_data_bytes": 3276800, "lexicon_bytes": 3972115},
+  "files": [
+    {"name": "model.int8.onnx", "size_bytes": 24370878, "sha256": "0ba1e21eda9c8bcc4a70ada7e0d27fefc9ba775aaa037547248ec71f9a3d9b7d"},
+    {"name": "voices.bin", "size_bytes": 3276800, "sha256": "d520519c4a3519d44fcfcd943ed0b1e3c5da5cee0eea501d922fac1a93cd24dc"},
+    {"name": "tokens.txt", "size_bytes": 1064, "sha256": "934a4188addc7665dd3410256bb622169242357fbb99d840d9351209b486dabb"},
+    {"name": "lexicon.txt", "size_bytes": 3972115, "sha256": "c7b7d6bd6db10cf90af8779c95e81e7d85d1c19a711c90b9bb3357b084b38b74"},
+    {"name": "LICENSE", "size_bytes": 11358, "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"},
+    {"name": "CMUDICT-LICENSE", "size_bytes": 1754, "sha256": "bd4ce8e44170a5f9f481310ca85c51de3c4f851a65e679b40e603b143bd3542a"},
+    {"name": "MODEL_CARD.md", "size_bytes": 739, "sha256": "89800b1fd12297f55547fb5cb3b6a56f2d7f36bfa19e1d4790f4ef8bfcb16650"}
+  ]
+}

@@ -1,0 +1,79 @@
+name: Offline TTS development bundle
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: tts-distribution-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-x64:
+    name: Linux x64 offline TTS bundle
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Verify runner architecture
+        run: test "$RUNNER_ARCH" = "X64"
+
+      - name: Install native build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libasound2-dev cmake libclang-dev
+
+      - name: Download and assemble pinned TTS voice pack
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/kitten-nano-en-v0_8-int8.tar.bz2"
+          dictionary="$RUNNER_TEMP/cmudict.dict"
+          dictionary_license="$RUNNER_TEMP/CMUDICT-LICENSE"
+          curl --fail --location --retry 3 --output "$archive" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kitten-nano-en-v0_8-int8.tar.bz2
+          curl --fail --location --retry 3 --output "$dictionary" https://raw.githubusercontent.com/cmusphinx/cmudict/74790861f652b15e4ac49015a90074ad62a27690/cmudict.dict
+          curl --fail --location --retry 3 --output "$dictionary_license" https://raw.githubusercontent.com/cmusphinx/cmudict/74790861f652b15e4ac49015a90074ad62a27690/LICENSE
+          python3 packaging/tts_model_pack.py "$archive" "$dictionary" "$dictionary_license" "$RUNNER_TEMP/tts-pack"
+
+      - name: Restore release Cargo cache
+        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: speech-tts-release-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock') }}-linux-x64
+          restore-keys: |
+            speech-tts-release-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Build TTS-enabled application
+        env:
+          CARGO_PROFILE_RELEASE_STRIP: symbols
+        run: cargo build --locked --release --features tts --bin speech-studio -j 2
+
+      - name: Assemble, extract, and verify offline portable bundle
+        run: |
+          python3 packaging/portable.py \
+            --target x86_64-unknown-linux-gnu \
+            --binary target/release/speech-studio \
+            --output dist/tts-preview \
+            --tts-pack "$RUNNER_TEMP/tts-pack/engines/tts-en-us-kitten-nano-v0_8-int8"
+          artifact="$(find dist/tts-preview -maxdepth 1 -type f -name '*.tar.gz' -print -quit)"
+          test -n "$artifact"
+          sha256sum "$artifact" | tee dist/tts-preview/SHA256SUMS
+
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: speech-studio-linux-x64-offline-tts-unsigned
+          path: dist/tts-preview/
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

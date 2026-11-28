@@ -19,6 +19,8 @@ use iced::{
 use localwright_core::Job;
 use localwright_core::{read_bounded, write_bytes};
 use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
+#[cfg(feature = "tts")]
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{
     path::{Path, PathBuf},
     sync::{mpsc, Arc, Mutex, MutexGuard},
@@ -219,6 +221,18 @@ struct State {
     model_checking: bool,
     #[cfg(feature = "asr")]
     model_status: Option<std::result::Result<String, String>>,
+    #[cfg(feature = "tts")]
+    tts_text: String,
+    #[cfg(feature = "tts")]
+    tts_voice: String,
+    #[cfg(feature = "tts")]
+    tts_speed: f32,
+    #[cfg(feature = "tts")]
+    tts_job: Job,
+    #[cfg(feature = "tts")]
+    tts_busy: bool,
+    #[cfg(feature = "tts")]
+    tts_progress: Arc<AtomicUsize>,
 }
 
 impl State {
@@ -273,6 +287,18 @@ impl State {
                 model_checking: true,
                 #[cfg(feature = "asr")]
                 model_status: None,
+                #[cfg(feature = "tts")]
+                tts_text: String::new(),
+                #[cfg(feature = "tts")]
+                tts_voice: "Jasper".into(),
+                #[cfg(feature = "tts")]
+                tts_speed: 1.0,
+                #[cfg(feature = "tts")]
+                tts_job: Job::new(),
+                #[cfg(feature = "tts")]
+                tts_busy: false,
+                #[cfg(feature = "tts")]
+                tts_progress: Arc::new(AtomicUsize::new(0)),
             },
             initial_task,
         )
@@ -427,6 +453,52 @@ impl State {
                         }
                     }
                 }
+            }
+            #[cfg(feature = "tts")]
+            Message::TtsTextChanged(value) => self.tts_text = value,
+            #[cfg(feature = "tts")]
+            Message::TtsVoiceChanged(value) => self.tts_voice = value,
+            #[cfg(feature = "tts")]
+            Message::TtsSpeedChanged(value) => self.tts_speed = value,
+            #[cfg(feature = "tts")]
+            Message::GenerateSpeech => {
+                if self.tts_busy {
+                    self.notice = "Speech synthesis is already running.".into();
+                } else {
+                    self.tts_busy = true;
+                    self.tts_job = Job::new();
+                    self.tts_progress.store(0, Ordering::Relaxed);
+                    return tts_save_dialog(
+                        self.tts_text.clone(),
+                        self.tts_voice.clone(),
+                        self.tts_speed,
+                        self.tts_job.clone(),
+                        Arc::clone(&self.tts_progress),
+                    );
+                }
+            }
+            #[cfg(feature = "tts")]
+            Message::TtsOutputPicked(Some((text, voice, speed, path, job, progress))) => {
+                return tts_task(text, voice, speed, path, job, progress);
+            }
+            #[cfg(feature = "tts")]
+            Message::TtsOutputPicked(None) => self.tts_busy = false,
+            #[cfg(feature = "tts")]
+            Message::TtsFinished(path, voice, result) => {
+                self.tts_busy = false;
+                match result {
+                    Ok(sample_count) => {
+                        self.notice =
+                            format!("Generated {sample_count} samples with the {voice} voice.");
+                        let _ = self.commands.send(Command::Open(path));
+                    }
+                    Err(error) => self.notice = format!("Speech synthesis failed: {error}"),
+                }
+            }
+            #[cfg(feature = "tts")]
+            Message::CancelTts => {
+                self.tts_job.cancel();
+                self.notice = "Speech synthesis cancellation requested.".into();
             }
             Message::RecordDialog => {
                 return Task::perform(
@@ -882,6 +954,31 @@ impl State {
         .align_y(iced::Alignment::Center)
         .wrap();
 
+        #[cfg(feature = "tts")]
+        let tts_controls = column![
+            text("Offline English speech synthesis · Kitten Nano v0.8 · eight voices"),
+            text_input("Enter English text (up to 8 KiB)", &self.tts_text)
+                .on_input(Message::TtsTextChanged),
+            row![
+                text("Voice"),
+                pick_list(
+                    ["Jasper", "Bella", "Bruno", "Luna", "Hugo", "Rosie", "Leo", "Kiki"],
+                    Some(self.tts_voice.as_str()),
+                    |voice| Message::TtsVoiceChanged(voice.to_owned()),
+                ),
+            ]
+            .spacing(8)
+            .align_y(iced::Alignment::Center),
+            row![
+                text("Speed"),
+                slider(0.75..=1.5, self.tts_speed, Message::TtsSpeedChanged).step(0.05),
+                text(format!("{:.2}×", self.tts_speed)),
+                button(if self.tts_busy { "Cancel synthesis" } else { "Generate WAV…" })
+                    .on_press_maybe(if self.tts_busy { Some(Message::CancelTts) } else if !self.tts_text.trim().is_empty() { Some(Message::GenerateSpeech) } else { None }),
+            ].spacing(8).align_y(iced::Alignment::Center).wrap(),
+            text(format!("Synthesis progress: {}% · Requires the separately installed offline voice pack. New WAV output never replaces an existing file.", self.tts_progress.load(Ordering::Relaxed))),
+        ].spacing(8);
+
         scrollable(
             container({
                 let controls = column![
@@ -1034,6 +1131,8 @@ impl State {
                 .spacing(18);
                 #[cfg(feature = "asr")]
                 let controls = controls.push(asr_controls);
+                #[cfg(feature = "tts")]
+                let controls = controls.push(tts_controls);
                 controls
             })
             .width(Length::Fill)
@@ -1051,6 +1150,8 @@ impl State {
 
 impl Drop for State {
     fn drop(&mut self) {
+        #[cfg(feature = "tts")]
+        self.tts_job.cancel();
         #[cfg(feature = "asr")]
         self.transcription_job.cancel();
         #[cfg(feature = "asr")]
@@ -1098,6 +1199,55 @@ fn model_status_task(model: AsrModel, job: Job) -> Task<Message> {
             (model, result)
         },
         |(model, result)| Message::ModelStatusChecked(model, result),
+    )
+}
+
+#[cfg(feature = "tts")]
+fn tts_save_dialog(
+    text: String,
+    voice: String,
+    speed: f32,
+    job: Job,
+    progress: Arc<AtomicUsize>,
+) -> Task<Message> {
+    Task::perform(
+        async move {
+            let path = rfd::AsyncFileDialog::new()
+                .set_title("Save synthesized speech as a new WAV")
+                .add_filter("WAV audio", &["wav"])
+                .save_file()
+                .await
+                .map(|file| file.path().to_path_buf());
+            path.map(|path| (text, voice, speed, path, job, progress))
+        },
+        Message::TtsOutputPicked,
+    )
+}
+
+#[cfg(feature = "tts")]
+fn tts_task(
+    text: String,
+    voice: String,
+    speed: f32,
+    path: PathBuf,
+    job: Job,
+    progress: Arc<AtomicUsize>,
+) -> Task<Message> {
+    Task::perform(
+        async move {
+            let worker_path = path.clone();
+            let parameter =
+                serde_json::json!({"text": text, "voice": voice.as_str(), "speed": speed})
+                    .to_string();
+            let result = thread::spawn(move || {
+                crate::tts::synthesize_file(&parameter, &worker_path, &job, Some(progress))
+                    .map_err(|error| error.message)
+            })
+            .join()
+            .unwrap_or_else(|_| Err("Offline TTS worker stopped unexpectedly".into()));
+            (path, voice, result)
+        },
+        |(path, voice, result)| Message::TtsFinished(path, voice, result),
     )
 }
 
@@ -1149,6 +1299,20 @@ enum Message {
     CancelTranscription,
     #[cfg(feature = "asr")]
     TranscriptionFinished(PathBuf, bool, std::result::Result<Vec<Segment>, String>),
+    #[cfg(feature = "tts")]
+    TtsTextChanged(String),
+    #[cfg(feature = "tts")]
+    TtsVoiceChanged(String),
+    #[cfg(feature = "tts")]
+    TtsSpeedChanged(f32),
+    #[cfg(feature = "tts")]
+    GenerateSpeech,
+    #[cfg(feature = "tts")]
+    TtsOutputPicked(Option<(String, String, f32, PathBuf, Job, Arc<AtomicUsize>)>),
+    #[cfg(feature = "tts")]
+    TtsFinished(PathBuf, String, std::result::Result<usize, String>),
+    #[cfg(feature = "tts")]
+    CancelTts,
     Tick,
 }
 

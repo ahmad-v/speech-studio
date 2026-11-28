@@ -29,7 +29,7 @@ jobs:
       - name: Install build prerequisites
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libasound2-dev xvfb cmake libclang-dev
+          sudo apt-get install -y libxkbcommon-dev libxkbcommon-x11-0 libwayland-dev libasound2-dev xvfb cmake libclang-dev strace
 
       - name: Restore integration Cargo cache
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
@@ -66,8 +66,41 @@ jobs:
           cargo test --locked --no-default-features
           cargo run --locked --no-default-features -- --cli --help
 
-      - name: Verify optional offline ASR build and tests
+      - name: Verify optional offline ASR and TTS builds and tests
         run: |
           cargo check --locked --all-targets --all-features
           cargo test --locked --all-features
           cargo test --locked --no-default-features --features asr
+
+      - name: Assemble the pinned offline TTS pack and synthesize a smoke sample
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/kitten-nano-en-v0_8-int8.tar.bz2"
+          dictionary="$RUNNER_TEMP/cmudict.dict"
+          dictionary_license="$RUNNER_TEMP/CMUDICT-LICENSE"
+          output="$RUNNER_TEMP/tts-offline-smoke.wav"
+          pack="$RUNNER_TEMP/tts-pack"
+          curl --fail --location --retry 3 --output "$archive" https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/kitten-nano-en-v0_8-int8.tar.bz2
+          curl --fail --location --retry 3 --output "$dictionary" https://raw.githubusercontent.com/cmusphinx/cmudict/74790861f652b15e4ac49015a90074ad62a27690/cmudict.dict
+          curl --fail --location --retry 3 --output "$dictionary_license" https://raw.githubusercontent.com/cmusphinx/cmudict/74790861f652b15e4ac49015a90074ad62a27690/LICENSE
+          python3 packaging/tts_model_pack.py "$archive" "$dictionary" "$dictionary_license" "$pack"
+          cargo build --locked --features tts --bin speech-studio
+          mkdir -p target/debug/engines
+          cp -R "$pack/engines/tts-en-us-kitten-nano-v0_8-int8" target/debug/engines/
+          strace -f -qq -e trace=network -o "$RUNNER_TEMP/tts-offline.trace" timeout --signal=TERM --kill-after=5s 180s ./target/debug/speech-studio --cli synthesize-speech "" "$output" '{"text":"Hello, this is an offline speech synthesis check.","voice":"Jasper","speed":1.0}'
+          if grep -Eq 'socket\(|socketpair\(|connect\(|sendto\(|sendmsg\(' "$RUNNER_TEMP/tts-offline.trace"; then
+            echo "Offline TTS attempted a network syscall" >&2
+            cat "$RUNNER_TEMP/tts-offline.trace" >&2
+            exit 1
+          fi
+          python3 - "$output" <<'PY'
+          import sys
+          import wave
+
+          with wave.open(sys.argv[1], "rb") as sample:
+              assert sample.getnchannels() == 1, "expected mono WAV"
+              assert sample.getsampwidth() == 2, "expected 16-bit PCM WAV"
+              assert sample.getframerate() == 24000, "expected 24 kHz Kitten sample"
+              assert 0 < sample.getnframes() <= 24_000 * 180, "unexpected generated sample length"
+          print("Offline Kitten inference produced a bounded 24 kHz mono PCM16 WAV")
+          PY
