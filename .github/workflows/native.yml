@@ -78,15 +78,13 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Could not install the Visual Studio Clang toolset" }
           }
           if (-not (Test-Path $clang)) { throw "The Visual Studio clang-cl compiler was not installed" }
+          # whisper-rs-sys uses verified Windows x64 ABI bindings on ARM64;
+          # clang-cl remains the compiler for the scalar ggml backend.
           @(
             'CMAKE_GENERATOR=Ninja'
             "CMAKE_TOOLCHAIN_FILE=$(Join-Path $env:GITHUB_WORKSPACE '.github\cmake\ggml-portable.cmake')"
             "CC_aarch64_pc_windows_msvc=$clang"
             "CXX_aarch64_pc_windows_msvc=$clang"
-            # Make bindgen parse the same Windows ARM64 ABI that Cargo and
-            # clang-cl compile. Without this, whisper_full_params is emitted
-            # as an empty opaque type (size 1) instead of its 264-byte ABI.
-            'BINDGEN_EXTRA_CLANG_ARGS_aarch64_pc_windows_msvc=--target=aarch64-pc-windows-msvc'
           ) | ForEach-Object { $_ >> $env:GITHUB_ENV }
 
       - name: Disable runner-specific Whisper CPU instructions on Apple Silicon
