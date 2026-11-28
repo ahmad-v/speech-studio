@@ -1,0 +1,40 @@
+name: Offline ASR model packs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: asr-model-packs-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  model-packs:
+    name: Verify and package offline Whisper models
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Build pinned English and multilingual packs
+        run: python3 packaging/create_whisper_model_packs.py dist/asr-model-packs
+
+      - name: Verify offline packager tests
+        run: python3 -m unittest discover -s packaging -p 'test_*.py'
+
+      - name: Upload model expansion packs
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: speech-studio-offline-asr-model-packs
+          path: dist/asr-model-packs/*.zip
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

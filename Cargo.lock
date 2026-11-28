@@ -2173,7 +2173,7 @@ checksum = "47d9d19d1d6efa0109d2f65ff4c85cddd50bd572e5a00127ab10987290bcefae"
 [[package]]
 name = "localwright-core"
 version = "0.1.0"
-source = "git+https://github.com/ahmad-v/localwright?rev=6c73d43a419189c276623c3b083f7ffb208c24a6#6c73d43a419189c276623c3b083f7ffb208c24a6"
+source = "git+https://github.com/ahmad-v/localwright?rev=cd563802bb5ce4de7cc3d7b9d8cbef5d36ce73b1#cd563802bb5ce4de7cc3d7b9d8cbef5d36ce73b1"
 dependencies = [
  "command-group",
  "serde",
@@ -2185,7 +2185,7 @@ dependencies = [
 [[package]]
 name = "localwright-ui"
 version = "0.1.0"
-source = "git+https://github.com/ahmad-v/localwright?rev=6c73d43a419189c276623c3b083f7ffb208c24a6#6c73d43a419189c276623c3b083f7ffb208c24a6"
+source = "git+https://github.com/ahmad-v/localwright?rev=cd563802bb5ce4de7cc3d7b9d8cbef5d36ce73b1#cd563802bb5ce4de7cc3d7b9d8cbef5d36ce73b1"
 dependencies = [
  "futures",
  "iced",
@@ -3687,6 +3687,7 @@ dependencies = [
 name = "speech-studio"
 version = "0.1.0-alpha.1"
 dependencies = [
+ "cpal",
  "hound",
  "iced",
  "localwright-core",
@@ -4670,8 +4671,6 @@ dependencies = [
 [[package]]
 name = "whisper-rs-sys"
 version = "0.13.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c86f1b993f216594b1ad9a9bb00a26014fb7c512e12664a2d401c7897d2ef7d"
 dependencies = [
  "bindgen 0.71.1",
  "cfg-if",

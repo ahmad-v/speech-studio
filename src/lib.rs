@@ -5,6 +5,8 @@ mod audio_model;
 #[cfg(all(feature = "gui", feature = "audio-playback"))]
 pub mod audio_ui;
 mod cue_edit;
+#[cfg(any(feature = "audio-playback", test))]
+mod recording;
 use localwright_core::*;
 #[cfg(feature = "audio-playback")]
 use rodio::Source;
@@ -58,7 +60,7 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"export-vtt",label:"Save WebVTT",hint:"Export an SRT file or edited SRT draft as plain-text WebVTT cues. Choose a new .vtt output."},
  Operation{id:"export-lrc",label:"Save LRC lyrics",hint:"Export cue start times and text to LRC. LRC has no cue end times; multiline text is joined with spaces."},
  #[cfg(feature="asr")]
- Operation{id:"transcribe",label:"Transcribe (experimental)",hint:"16 kHz mono PCM16 WAV. Leave the parameter blank for the private English pack, or supply absolute model path | SHA256. CPU inference."}];
+ Operation{id:"transcribe",label:"Transcribe (experimental)",hint:"16 kHz mono PCM16 WAV. Leave the parameter blank for private English Tiny; enter multilingual for private multilingual Tiny; or supply absolute model path | SHA256. CPU inference."}];
 fn err(e: impl std::fmt::Display) -> Error {
     Error::input(e.to_string())
 }
@@ -999,36 +1001,56 @@ fn render_vtt(segments: &[Segment], job: &Job) -> Result<String> {
 }
 
 #[cfg(feature = "asr")]
-fn model_bytes(parameter: &str) -> Result<(Vec<u8>, bool)> {
-    let private = parameter.trim().is_empty();
-    let manifest: serde_json::Value =
-        serde_json::from_str(include_str!("../packaging/whisper-model/manifest.json"))?;
-    let (path, expected, limit) = if private {
+fn private_model_manifest(parameter: &str) -> Option<&'static str> {
+    match parameter.trim() {
+        "" => Some(include_str!("../packaging/whisper-model/manifest.json")),
+        "multilingual" | "whisper-tiny-multilingual" => Some(include_str!(
+            "../packaging/whisper-model/manifest-multilingual.json"
+        )),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "asr")]
+fn app_relative_model_path(executable: &Path, id: &str, file: &str) -> Result<std::path::PathBuf> {
+    let executable = executable.canonicalize()?;
+    let app_dir = executable
+        .parent()
+        .ok_or_else(|| Error::engine("Application directory unavailable"))?;
+    Ok(app_dir.join("engines").join(id).join(file))
+}
+
+#[cfg(feature = "asr")]
+fn model_bytes(parameter: &str) -> Result<(Vec<u8>, String)> {
+    let manifest_text = private_model_manifest(parameter);
+    let (path, expected, limit, language_mode) = if let Some(manifest_text) = manifest_text {
+        let manifest: serde_json::Value = serde_json::from_str(manifest_text)?;
         let id = manifest["id"].as_str().expect("model manifest has an ID");
         let file = manifest["file"]
             .as_str()
             .expect("model manifest has a filename");
-        let executable = std::env::current_exe()?.canonicalize()?;
-        let path = executable
-            .parent()
-            .ok_or_else(|| Error::engine("Application directory unavailable"))?
-            .join("engines")
-            .join(id)
-            .join(file);
+        let executable = std::env::current_exe()?;
+        let path = app_relative_model_path(&executable, id, file)?;
         let canonical = path
             .canonicalize()
-            .map_err(|_| Error::input("Private Whisper Tiny English model pack is missing"))?;
+            .map_err(|_| Error::input("Private Whisper model pack is missing"))?;
         if canonical != path {
             return Err(Error::input("Private Whisper model path must not redirect"));
         }
+        let language_mode = manifest["language_mode"]
+            .as_str()
+            .filter(|mode| matches!(*mode, "en" | "auto"))
+            .ok_or_else(|| Error::input("Invalid language mode in private Whisper manifest"))?;
         (
             path,
             manifest["sha256"]
                 .as_str()
-                .expect("model manifest has a SHA-256"),
+                .expect("model manifest has a SHA-256")
+                .to_owned(),
             manifest["bytes"]
                 .as_u64()
                 .expect("model manifest has a length"),
+            language_mode.to_owned(),
         )
     } else {
         let (path, expected) = parameter
@@ -1038,17 +1060,22 @@ fn model_bytes(parameter: &str) -> Result<(Vec<u8>, bool)> {
         if !path.is_absolute() {
             return Err(Error::input("Model path must be absolute"));
         }
-        (path.to_path_buf(), expected.trim(), 512 * 1024 * 1024)
+        (
+            path.to_path_buf(),
+            expected.trim().to_owned(),
+            512 * 1024 * 1024,
+            "auto".to_owned(),
+        )
     };
     if expected.len() != 64 || !expected.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(Error::input("Expected a 64-digit model SHA-256"));
     }
     let bytes = read_bounded(&path, limit)?;
     let actual = format!("{:x}", Sha256::digest(&bytes));
-    if !actual.eq_ignore_ascii_case(expected) {
+    if !actual.eq_ignore_ascii_case(&expected) {
         return Err(Error::input("Model SHA256 mismatch"));
     }
-    Ok((bytes, private))
+    Ok((bytes, language_mode))
 }
 
 #[cfg(feature = "asr")]
@@ -1058,7 +1085,7 @@ fn transcribe(samples: &[f32], parameter: &str, j: &Job) -> Result<Vec<Segment>>
     if samples.iter().all(|s| s.abs() < 0.0001) {
         return Err(Error::input("Audio is silent; no transcription attempted"));
     }
-    let (bytes, private) = model_bytes(parameter)?;
+    let (bytes, language_mode) = model_bytes(parameter)?;
     j.check()?;
     // Keep native decoder output out of the console and application logs.
     whisper_rs::install_logging_hooks();
@@ -1071,7 +1098,7 @@ fn transcribe(samples: &[f32], parameter: &str, j: &Job) -> Result<Vec<Segment>>
         .map_err(|e| Error::engine(e.to_string()))?;
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_n_threads(2);
-    params.set_language(Some(if private { "en" } else { "auto" }));
+    params.set_language(Some(&language_mode));
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
@@ -1325,7 +1352,10 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
                 segments.len()
             );
             out.draft = Some(s);
-            out.warnings.push("No accuracy, silence robustness or language support verified. Cancellation is cooperative before/after native inference, not during it.".into());
+            out.warnings.push(
+                "WER/CER, silence robustness, and per-language recognition quality have not been measured. Cancellation is cooperative before/after native inference, not during it."
+                    .into(),
+            );
         }
         _ => return Err(Error::input("Unknown or unavailable operation")),
     };
@@ -1769,5 +1799,62 @@ mod tests {
             .try_seek(Duration::from_millis(100))
             .expect("buffered MP4 audio should seek");
         assert!(decoder.next().is_some());
+    }
+
+    #[cfg(feature = "asr")]
+    #[test]
+    fn multilingual_private_model_manifest_selects_auto_detection_and_declares_resources() {
+        let english: serde_json::Value = serde_json::from_str(
+            private_model_manifest("").expect("blank parameter keeps the English model"),
+        )
+        .unwrap();
+        let multilingual: serde_json::Value = serde_json::from_str(
+            private_model_manifest("multilingual").expect("multilingual model is selectable"),
+        )
+        .unwrap();
+
+        assert_eq!(english["id"], "whisper-tiny-en");
+        assert_eq!(english["language_mode"], "en");
+        assert_eq!(multilingual["id"], "whisper-tiny-multilingual");
+        assert_eq!(multilingual["language_mode"], "auto");
+        assert_eq!(multilingual["bytes"], 77_691_713);
+        assert_eq!(
+            multilingual["sha256"],
+            "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"
+        );
+        assert_eq!(multilingual["cpu_threads"], 2);
+        assert!(!multilingual["gpu_required"].as_bool().unwrap());
+        assert_eq!(multilingual["runtime_ram_bytes"], serde_json::Value::Null);
+    }
+
+    #[cfg(feature = "asr")]
+    #[test]
+    fn private_model_path_resolves_beside_the_executable_not_the_working_directory() {
+        let directory = tempfile::tempdir().unwrap();
+        let executable = directory.path().join("speech-studio");
+        std::fs::write(&executable, b"test executable path").unwrap();
+        let resolved =
+            app_relative_model_path(&executable, "whisper-tiny-multilingual", "ggml-tiny.bin")
+                .unwrap();
+        let canonical_directory = directory.path().canonicalize().unwrap();
+        assert_eq!(
+            resolved,
+            canonical_directory.join("engines/whisper-tiny-multilingual/ggml-tiny.bin")
+        );
+    }
+
+    #[cfg(feature = "asr")]
+    #[test]
+    fn explicit_local_models_keep_automatic_language_detection_and_hash_validation() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("external-model.bin");
+        let model = b"synthetic model bytes";
+        std::fs::write(&path, model).unwrap();
+        let digest = format!("{:x}", Sha256::digest(model));
+        let parameter = format!("{} | {digest}", path.display());
+
+        let (loaded, language_mode) = model_bytes(&parameter).unwrap();
+        assert_eq!(loaded.as_slice(), model);
+        assert_eq!(language_mode, "auto");
     }
 }

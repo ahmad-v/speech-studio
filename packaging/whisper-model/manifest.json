@@ -6,7 +6,15 @@
   "sha256": "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f",
   "format": "whisper.cpp GGML",
   "language": "en",
+  "language_mode": "en",
+  "cpu_threads": 2,
+  "gpu_required": false,
+  "runtime_ram_bytes": null,
+  "runtime_ram_note": "Speech Studio runs CPU inference. Runtime RSS has not been measured; upstream lists about 1 GiB required VRAM for Tiny on its GPU benchmark, which is not a CPU RAM measurement.",
   "license": "MIT",
   "license_source": "https://github.com/openai/whisper/blob/86098128c0b4f24f0e2aa2994de830614b474227/LICENSE",
-  "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.en.bin"
+  "license_sha256": "b5d65a59060e68c4ff940e1eddfa6f94b2d68fdf58ed7f4dd57721c997e35e9d",
+  "source": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.en.bin",
+  "source_revision": "5359861c739e955e79d9a303bcbc70fb988958b1",
+  "source_sha256_verified_against": "Hugging Face LFS metadata"
 }

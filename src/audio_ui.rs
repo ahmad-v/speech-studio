@@ -1,14 +1,17 @@
 #![forbid(unsafe_code)]
 
+use crate::recording::{enumerate_inputs, start_capture, CaptureSession, InputDevice};
 use crate::{
     audio_model::{
-        active_cue, clamp_seek, decode_project, encode_project, format_time, transport_action,
-        waveform_seek, CueHistory, TransportAction,
+        active_cue, clamp_seek, decode_workspace_project, encode_workspace_project, format_time,
+        transport_action, waveform_seek, CueHistory, DecodedWorkspaceProject, TransportAction,
     },
     load_playback_clip, open_audio_decoder, parse_stamp, stamp, PlaybackClip, Segment,
 };
 use iced::{
-    widget::{button, canvas, column, container, row, scrollable, slider, text, text_input},
+    widget::{
+        button, canvas, column, container, pick_list, row, scrollable, slider, text, text_input,
+    },
     Color, Element, Length, Point, Rectangle, Renderer, Subscription, Task, Theme,
 };
 use localwright_core::Job;
@@ -114,6 +117,7 @@ impl canvas::Program<Message> for Waveform<'_> {
 #[derive(Debug, Clone, Default)]
 struct Snapshot {
     file_name: String,
+    audio_path: Option<PathBuf>,
     waveform: Vec<f32>,
     duration_ms: u64,
     position_ms: u64,
@@ -121,6 +125,10 @@ struct Snapshot {
     loading: bool,
     playing: bool,
     paused: bool,
+    input_devices: Vec<String>,
+    selected_input: Option<String>,
+    recording: bool,
+    recording_ms: u64,
     message: String,
 }
 
@@ -130,6 +138,11 @@ enum Command {
     Pause,
     Resume,
     Stop,
+    RefreshInputs,
+    SelectInput(usize),
+    StartRecording(PathBuf),
+    StopRecording,
+    CancelRecording,
     Seek(u64),
     Shutdown,
 }
@@ -159,6 +172,7 @@ struct State {
     page_start: usize,
     cue_start_text: String,
     cue_end_text: String,
+    linked_audio: Option<PathBuf>,
     notice: String,
 }
 
@@ -175,6 +189,8 @@ impl State {
             .spawn(move || audio_worker(receiver, worker_snapshot))
         {
             lock_snapshot(&snapshot).message = format!("Could not start audio worker: {error}");
+        } else {
+            let _ = commands.send(Command::RefreshInputs);
         }
         let view = lock_snapshot(&snapshot).clone();
         (
@@ -188,6 +204,7 @@ impl State {
                 page_start: 0,
                 cue_start_text: String::new(),
                 cue_end_text: String::new(),
+                linked_audio: None,
                 notice: String::new(),
             },
             Task::none(),
@@ -214,6 +231,7 @@ impl State {
             }
             Message::FilePicked(Some(path)) => {
                 self.seek_value_ms = None;
+                self.linked_audio = None;
                 self.notice.clear();
                 if self.commands.send(Command::Open(path)).is_ok() {
                     self.view.loading = true;
@@ -223,6 +241,34 @@ impl State {
                 }
             }
             Message::FilePicked(None) => {}
+            Message::RecordDialog => {
+                return Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .set_title("Save a new WAV recording")
+                            .add_filter("WAV audio", &["wav"])
+                            .save_file()
+                            .await
+                            .map(|file| file.path().to_path_buf())
+                    },
+                    Message::RecordPath,
+                );
+            }
+            Message::RecordPath(Some(path)) => {
+                self.notice.clear();
+                self.send(Command::StartRecording(path));
+            }
+            Message::RecordPath(None) => {}
+            Message::RefreshInputs => self.send(Command::RefreshInputs),
+            Message::InputSelected(label) => {
+                if let Some((index, _)) = label.split_once(": ") {
+                    if let Ok(index) = index.parse::<usize>() {
+                        self.send(Command::SelectInput(index));
+                    }
+                }
+            }
+            Message::StopRecording => self.send(Command::StopRecording),
+            Message::CancelRecording => self.send(Command::CancelRecording),
             Message::OpenTranscript => {
                 return Task::perform(
                     async {
@@ -237,14 +283,28 @@ impl State {
                 );
             }
             Message::TranscriptPicked(Some(path)) => match load_transcript(&path) {
-                Ok(cues) => {
-                    let count = cues.len();
-                    self.cues = CueHistory::new(cues);
+                Ok(project) => {
+                    let count = project.segments.len();
+                    self.cues = CueHistory::new(project.segments);
+                    self.linked_audio = project.audio_path.map(|media| {
+                        if media.is_absolute() {
+                            media
+                        } else {
+                            path.parent().unwrap_or_else(|| Path::new(".")).join(media)
+                        }
+                    });
                     self.selected_cue = None;
                     self.page_start = 0;
                     self.cue_start_text.clear();
                     self.cue_end_text.clear();
-                    self.notice = format!("Loaded {count} transcript cues.");
+                    self.notice = if let Some(audio) = &self.linked_audio {
+                        format!(
+                            "Loaded {count} cues. Linked audio is available at {}",
+                            audio.display()
+                        )
+                    } else {
+                        format!("Loaded {count} transcript cues.")
+                    };
                 }
                 Err(error) => self.notice = format!("Could not open transcript: {error}"),
             },
@@ -262,11 +322,29 @@ impl State {
                     Message::ProjectSavePath,
                 );
             }
-            Message::ProjectSavePath(Some(path)) => match save_project(&path, self.cues.cues()) {
-                Ok(()) => self.notice = format!("Saved project to {}", path.display()),
-                Err(error) => self.notice = format!("Could not save project: {error}"),
-            },
+            Message::ProjectSavePath(Some(path)) => {
+                match save_project(&path, self.cues.cues(), self.view.audio_path.as_deref()) {
+                    Ok(()) => {
+                        self.linked_audio = self.view.audio_path.as_ref().and_then(|audio| {
+                            relative_media_path(&path, audio).ok().map(PathBuf::from)
+                        });
+                        self.notice = format!("Saved audio workspace project to {}", path.display())
+                    }
+                    Err(error) => self.notice = format!("Could not save project: {error}"),
+                }
+            }
             Message::ProjectSavePath(None) => {}
+            Message::LoadLinkedAudio => {
+                if let Some(path) = self.linked_audio.clone() {
+                    self.linked_audio = None;
+                    if self.commands.send(Command::Open(path)).is_ok() {
+                        self.view.loading = true;
+                        self.view.message = "Reading linked audio…".into();
+                    } else {
+                        self.view.message = "The audio worker has stopped.".into();
+                    }
+                }
+            }
             Message::SelectCue(index) => {
                 if let Some(cue) = self.cues.cues().get(index) {
                     let (start, end) = (cue.start, cue.end);
@@ -444,7 +522,7 @@ impl State {
                 column![
                     row![
                         text("Speech Studio audio workspace").size(24),
-                        button("Open WAV…").on_press(Message::OpenDialog),
+                        button("Open audio…").on_press(Message::OpenDialog),
                     ]
                     .spacing(16)
                     .align_y(iced::Alignment::Center)
@@ -474,6 +552,9 @@ impl State {
                         button("Open SRT / project…").on_press(Message::OpenTranscript),
                         button("Save project…")
                             .on_press_maybe((!cues.is_empty()).then_some(Message::SaveProject)),
+                        button("Load linked audio").on_press_maybe(
+                            self.linked_audio.as_ref().map(|_| Message::LoadLinkedAudio)
+                        ),
                     ]
                     .spacing(10)
                     .align_y(iced::Alignment::Center)
@@ -510,6 +591,31 @@ impl State {
                     .align_y(iced::Alignment::Center)
                     .wrap(),
                     row![
+                        pick_list(
+                            self.view.input_devices.clone(),
+                            self.view.selected_input.clone(),
+                            Message::InputSelected,
+                        )
+                        .placeholder("No input device"),
+                        button("Refresh inputs").on_press(Message::RefreshInputs),
+                        button("Record to WAV…").on_press_maybe(
+                            (!self.view.recording).then_some(Message::RecordDialog)
+                        ),
+                        button("Stop recording")
+                            .on_press_maybe(self.view.recording.then_some(Message::StopRecording)),
+                        button("Discard recording").on_press_maybe(
+                            self.view.recording.then_some(Message::CancelRecording),
+                        ),
+                        text(if self.view.recording {
+                            format!("Recording · {}", format_time(self.view.recording_ms))
+                        } else {
+                            "Ready to record".into()
+                        }),
+                    ]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center)
+                    .wrap(),
+                    row![
                         button(action_label).on_press_maybe(action.map(|_| Message::Transport)),
                         button("Stop").on_press_maybe(self.view.loaded.then_some(Message::Stop)),
                         text(if !self.notice.is_empty() {
@@ -523,7 +629,7 @@ impl State {
                     .spacing(12)
                     .align_y(iced::Alignment::Center)
                     .wrap(),
-                    text("Local audio decoding · physical audio device required for playback"),
+                    text("Local processing · playback and recording use host audio devices"),
                 ]
                 .spacing(18),
             )
@@ -550,6 +656,12 @@ impl Drop for State {
 enum Message {
     OpenDialog,
     FilePicked(Option<PathBuf>),
+    RecordDialog,
+    RecordPath(Option<PathBuf>),
+    RefreshInputs,
+    InputSelected(String),
+    StopRecording,
+    CancelRecording,
     Transport,
     Stop,
     Scrub(f32),
@@ -557,6 +669,7 @@ enum Message {
     WaveformSeek(u64),
     OpenTranscript,
     TranscriptPicked(Option<PathBuf>),
+    LoadLinkedAudio,
     SaveProject,
     ProjectSavePath(Option<PathBuf>),
     SelectCue(usize),
@@ -570,16 +683,16 @@ enum Message {
     Tick,
 }
 
-fn load_transcript(path: &Path) -> Result<Vec<Segment>, String> {
+fn load_transcript(path: &Path) -> Result<DecodedWorkspaceProject, String> {
     let bytes = read_bounded(path, 16 * 1024 * 1024).map_err(|error| error.message)?;
     let is_json = path
         .extension()
         .and_then(|extension| extension.to_str())
         .is_some_and(|extension| extension.eq_ignore_ascii_case("json"));
-    decode_project(&bytes, is_json)
+    decode_workspace_project(&bytes, is_json)
 }
 
-fn save_project(path: &Path, cues: &[Segment]) -> Result<(), String> {
+fn save_project(path: &Path, cues: &[Segment], audio_path: Option<&Path>) -> Result<(), String> {
     if !path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -587,8 +700,50 @@ fn save_project(path: &Path, cues: &[Segment]) -> Result<(), String> {
     {
         return Err("Choose a .json project path".into());
     }
-    let bytes = encode_project(cues)?;
+    let relative_audio = audio_path
+        .map(|audio| relative_media_path(path, audio))
+        .transpose()?;
+    let bytes = encode_workspace_project(cues, relative_audio.as_deref())?;
     write_bytes(path, &bytes).map_err(|error| error.message)
+}
+
+fn relative_media_path(project_path: &Path, audio_path: &Path) -> Result<String, String> {
+    let project_dir = project_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let project_dir = std::fs::canonicalize(project_dir)
+        .map_err(|error| format!("Could not resolve project directory: {error}"))?;
+    let audio_path = std::fs::canonicalize(audio_path)
+        .map_err(|error| format!("Could not resolve linked audio: {error}"))?;
+    let from = project_dir.components().collect::<Vec<_>>();
+    let to = audio_path.components().collect::<Vec<_>>();
+    let common = from
+        .iter()
+        .zip(&to)
+        .take_while(|(left, right)| left == right)
+        .count();
+    if common == 0 {
+        return Err("Project and audio are on different filesystem roots; choose a project directory on the same volume".into());
+    }
+    let mut parts = Vec::new();
+    for component in &from[common..] {
+        if matches!(component, std::path::Component::Normal(_)) {
+            parts.push("..".to_owned());
+        }
+    }
+    for component in &to[common..] {
+        if let std::path::Component::Normal(name) = component {
+            let name = name
+                .to_str()
+                .ok_or_else(|| "Linked audio path contains non-Unicode characters and cannot be stored portably".to_owned())?;
+            parts.push(name.to_owned());
+        }
+    }
+    if parts.is_empty() {
+        return Err("Could not form a relative path to the audio file".into());
+    }
+    Ok(parts.join("/"))
 }
 
 fn update_snapshot(snapshot: &Arc<Mutex<Snapshot>>, update: impl FnOnce(&mut Snapshot)) {
@@ -604,6 +759,9 @@ fn lock_snapshot(snapshot: &Mutex<Snapshot>) -> MutexGuard<'_, Snapshot> {
 fn audio_worker(receiver: mpsc::Receiver<Command>, snapshot: Arc<Mutex<Snapshot>>) {
     let mut clip: Option<PlaybackClip> = None;
     let mut session: Option<Session> = None;
+    let mut recording: Option<CaptureSession> = None;
+    let mut input_devices = Vec::<InputDevice>::new();
+    let mut selected_input = None;
     let mut position_ms = 0u64;
     loop {
         match receiver.recv_timeout(Duration::from_millis(80)) {
@@ -620,6 +778,7 @@ fn audio_worker(receiver: mpsc::Receiver<Command>, snapshot: Arc<Mutex<Snapshot>
                     view.position_ms = 0;
                     view.message = "Reading and validating audio…".into();
                     view.file_name.clear();
+                    view.audio_path = None;
                     view.waveform.clear();
                     view.duration_ms = 0;
                 });
@@ -632,6 +791,7 @@ fn audio_worker(receiver: mpsc::Receiver<Command>, snapshot: Arc<Mutex<Snapshot>
                             .to_owned();
                         update_snapshot(&snapshot, |view| {
                             view.file_name = name;
+                            view.audio_path = Some(path.clone());
                             view.waveform = loaded.waveform.clone();
                             view.duration_ms = loaded.duration_ms;
                             view.position_ms = 0;
@@ -643,6 +803,7 @@ fn audio_worker(receiver: mpsc::Receiver<Command>, snapshot: Arc<Mutex<Snapshot>
                     }
                     Err(error) => update_snapshot(&snapshot, |view| {
                         view.loading = false;
+                        view.audio_path = None;
                         view.message = format!("Could not open audio: {}", error.message);
                     }),
                 }
@@ -701,6 +862,77 @@ fn audio_worker(receiver: mpsc::Receiver<Command>, snapshot: Arc<Mutex<Snapshot>
                     .into();
                 });
             }
+            Ok(Command::RefreshInputs) => match enumerate_inputs() {
+                Ok(devices) => {
+                    if !devices
+                        .iter()
+                        .any(|device| Some(device.index) == selected_input)
+                    {
+                        selected_input = devices.first().map(|device| device.index);
+                    }
+                    input_devices = devices;
+                    update_snapshot(&snapshot, |view| {
+                        view.input_devices = input_devices
+                            .iter()
+                            .map(|device| device.label.clone())
+                            .collect();
+                        view.selected_input = selected_input.and_then(|index| {
+                            input_devices
+                                .iter()
+                                .find(|device| device.index == index)
+                                .map(|device| device.label.clone())
+                        });
+                        if input_devices.is_empty() {
+                            view.message = "No audio input devices are available".into();
+                        }
+                    });
+                }
+                Err(error) => update_snapshot(&snapshot, |view| {
+                    view.message = error;
+                    view.input_devices.clear();
+                    view.selected_input = None;
+                }),
+            },
+            Ok(Command::SelectInput(index)) => {
+                if recording.is_some() {
+                    update_snapshot(&snapshot, |view| {
+                        view.message = "Stop recording before changing the input device".into();
+                    });
+                } else if input_devices.iter().any(|device| device.index == index) {
+                    selected_input = Some(index);
+                    update_snapshot(&snapshot, |view| {
+                        view.selected_input = input_devices
+                            .iter()
+                            .find(|device| device.index == index)
+                            .map(|device| device.label.clone());
+                        view.message = "Input device selected".into();
+                    });
+                }
+            }
+            Ok(Command::StartRecording(path)) => {
+                if recording.is_some() {
+                    update_snapshot(&snapshot, |view| {
+                        view.message = "A recording is already active".into();
+                    });
+                } else {
+                    match start_capture(&path, selected_input) {
+                        Ok(capture) => {
+                            recording = Some(capture);
+                            update_snapshot(&snapshot, |view| {
+                                view.recording = true;
+                                view.recording_ms = 0;
+                                view.message = format!("Recording to {}", path.display());
+                            });
+                        }
+                        Err(error) => update_snapshot(&snapshot, |view| {
+                            view.recording = false;
+                            view.message = format!("Could not start recording: {error}");
+                        }),
+                    }
+                }
+            }
+            Ok(Command::StopRecording) => finish_capture(&mut recording, &snapshot, None),
+            Ok(Command::CancelRecording) => cancel_capture(&mut recording, &snapshot),
             Ok(Command::Seek(target_ms)) => {
                 position_ms = clip
                     .as_ref()
@@ -728,6 +960,15 @@ fn audio_worker(receiver: mpsc::Receiver<Command>, snapshot: Arc<Mutex<Snapshot>
             Err(mpsc::RecvTimeoutError::Timeout) => {}
         }
 
+        if let Some(capture) = recording.as_mut() {
+            if let Err(error) = capture.drain() {
+                finish_capture(&mut recording, &snapshot, Some(error));
+            } else {
+                let progress = capture.duration_ms();
+                update_snapshot(&snapshot, |view| view.recording_ms = progress);
+            }
+        }
+
         let finished = session
             .as_ref()
             .is_some_and(|playback| playback.sink.empty());
@@ -748,6 +989,73 @@ fn audio_worker(receiver: mpsc::Receiver<Command>, snapshot: Arc<Mutex<Snapshot>
                 .min(u128::from(u64::MAX)) as u64;
             update_snapshot(&snapshot, |view| view.position_ms = position_ms);
         }
+    }
+    finish_capture(
+        &mut recording,
+        &snapshot,
+        Some("Recording stopped when the workspace closed".into()),
+    );
+}
+
+fn finish_capture(
+    recording: &mut Option<CaptureSession>,
+    snapshot: &Arc<Mutex<Snapshot>>,
+    reason: Option<String>,
+) {
+    let Some(capture) = recording.take() else {
+        return;
+    };
+    match capture.finish() {
+        Ok(finalized) => update_snapshot(snapshot, |view| {
+            view.recording = false;
+            view.recording_ms = 0;
+            let elapsed = if finalized.frames == 0 {
+                "empty WAV".into()
+            } else {
+                format!(
+                    "{:.2} seconds",
+                    finalized.frames as f64 / f64::from(finalized.sample_rate)
+                )
+            };
+            let partial_reason = match (reason, finalized.partial_reason) {
+                (Some(first), Some(second)) => Some(format!("{first}; {second}")),
+                (Some(reason), None) | (None, Some(reason)) => Some(reason),
+                (None, None) => None,
+            };
+            view.message = match partial_reason {
+                Some(reason) => format!(
+                    "Saved partial recording ({elapsed}) to {}: {reason}",
+                    finalized.path.display()
+                ),
+                None => format!(
+                    "Saved recording ({elapsed}) to {}",
+                    finalized.path.display()
+                ),
+            };
+        }),
+        Err(error) => update_snapshot(snapshot, |view| {
+            view.recording = false;
+            view.recording_ms = 0;
+            view.message = format!("Could not finalize recording: {error}");
+        }),
+    }
+}
+
+fn cancel_capture(recording: &mut Option<CaptureSession>, snapshot: &Arc<Mutex<Snapshot>>) {
+    let Some(capture) = recording.take() else {
+        return;
+    };
+    match capture.cancel() {
+        Ok(path) => update_snapshot(snapshot, |view| {
+            view.recording = false;
+            view.recording_ms = 0;
+            view.message = format!("Discarded new recording at {path}");
+        }),
+        Err(error) => update_snapshot(snapshot, |view| {
+            view.recording = false;
+            view.recording_ms = 0;
+            view.message = format!("Could not discard recording: {error}");
+        }),
     }
 }
 

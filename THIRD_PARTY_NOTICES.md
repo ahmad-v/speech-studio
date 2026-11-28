@@ -2,4 +2,6 @@
 
 No third-party engine binaries, models, icons or fonts are redistributed in this source snapshot. Cargo dependencies are declared in manifests. Their full transitive inventory, licenses, notices, advisories and redistribution obligations are unresolved until dependency resolution and review. Do not distribute binaries before completing these checks. See docs/DEPENDENCIES.md.
 
+The source tree vendors `whisper-rs-sys 0.13.1` to select a Windows/MSVC ABI binding for Windows ARM64. Preserve `vendor/whisper-rs-sys/LICENSE` (Unlicense) and `vendor/whisper-rs-sys/whisper.cpp/LICENSE` (MIT) with redistributed source or binaries. The vendored tree contains source code, not a Whisper executable or model. The generated ARM64 binding provenance and SHA-256 are recorded in `vendor/whisper-rs-sys/BINDINGS_PROVENANCE.md`.
+
 Portable CI previews include `DEPENDENCY_LICENSES.json` and collected Cargo dependency license and notice texts under `third-party/`. The inventory includes normal and build dependency edges. It is not a binary linkage audit, a choice among upstream license alternatives, or a review of separately embedded assets and platform libraries. Empty notice lists require follow-up against the upstream source.

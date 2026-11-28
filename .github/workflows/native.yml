@@ -57,8 +57,39 @@ jobs:
           sudo apt-get install -y libxkbcommon-dev libwayland-dev libasound2-dev
 
       - name: Install Linux ASR build prerequisites
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        if: runner.os == 'Linux'
         run: sudo apt-get install -y cmake libclang-dev
+
+      - name: Configure Clang toolset for Windows ARM64 Whisper
+        if: matrix.target == 'aarch64-pc-windows-msvc'
+        shell: pwsh
+        run: |
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $installation = & $vswhere -latest -products '*' -property installationPath
+          if (-not $installation) { throw "Visual Studio installation was not found" }
+          $clang = Join-Path $installation 'VC\Tools\Llvm\bin\clang-cl.exe'
+          if (-not (Test-Path $clang)) {
+            $clang = Join-Path $env:ProgramFiles 'LLVM\bin\clang-cl.exe'
+          }
+          if (-not (Test-Path $clang)) {
+            $clang = Join-Path $installation 'VC\Tools\Llvm\bin\clang-cl.exe'
+            $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+            & $installer modify --installPath $installation --add Microsoft.VisualStudio.Component.VC.Llvm.Clang --quiet --wait --norestart
+            if ($LASTEXITCODE -ne 0) { throw "Could not install the Visual Studio Clang toolset" }
+          }
+          if (-not (Test-Path $clang)) { throw "The Visual Studio clang-cl compiler was not installed" }
+          # whisper-rs-sys uses verified Windows x64 ABI bindings on ARM64;
+          # clang-cl remains the compiler for the scalar ggml backend.
+          @(
+            'CMAKE_GENERATOR=Ninja'
+            "CMAKE_TOOLCHAIN_FILE=$(Join-Path $env:GITHUB_WORKSPACE '.github\cmake\ggml-portable.cmake')"
+            "CC_aarch64_pc_windows_msvc=$clang"
+            "CXX_aarch64_pc_windows_msvc=$clang"
+          ) | ForEach-Object { $_ >> $env:GITHUB_ENV }
+
+      - name: Disable runner-specific Whisper CPU instructions on Apple Silicon
+        if: matrix.target == 'aarch64-apple-darwin'
+        run: echo "CMAKE_TOOLCHAIN_FILE=${GITHUB_WORKSPACE}/.github/cmake/ggml-portable.cmake" >> "$GITHUB_ENV"
 
       - name: Restore native Cargo cache
         uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
@@ -68,7 +99,7 @@ jobs:
             ~/.cargo/registry/cache
             ~/.cargo/git/db
             target
-          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock') }}-debug-native-gui-no-asr
+          key: cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.toml', 'Cargo.lock') }}-debug-native-gui-all-features
           restore-keys: |
             cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-
 
@@ -80,8 +111,33 @@ jobs:
           cargo test --locked --target "$BUILD_TARGET"
           cargo test --locked --no-default-features --target "$BUILD_TARGET"
 
-      - name: Verify optional ASR build and tests on Linux x64
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
+      - name: Verify optional ASR and audio builds and tests on native target
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
         run: |
-          cargo check --locked --all-targets --all-features
-          cargo test --locked --all-features
+          cargo check --locked --all-targets --all-features --target "$BUILD_TARGET"
+          cargo test --locked --all-features --target "$BUILD_TARGET"
+
+      - name: Preserve verified Windows x64 Whisper ABI bindings
+        if: success() && matrix.target == 'x86_64-pc-windows-msvc'
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: whisper-bindings-windows-msvc-x64
+          path: target/x86_64-pc-windows-msvc/debug/build/whisper-rs-sys-*/out/bindings.rs
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Inspect generated Whisper bindings after Windows ARM failure
+        if: failure() && matrix.target == 'aarch64-pc-windows-msvc'
+        run: |
+          shopt -s nullglob
+          bindings=(target/aarch64-pc-windows-msvc/debug/build/whisper-rs-sys-*/out/bindings.rs)
+          if ((${#bindings[@]} == 0)); then
+            echo "No generated whisper-rs-sys bindings were left in the target directory."
+            exit 0
+          fi
+          for file in "${bindings[@]}"; do
+            echo "Generated binding: $file"
+            grep -n -A14 -B3 'struct whisper_full_params' "$file" || true
+            grep -n -E 'Size of whisper_full_params|Alignment of whisper_full_params|Offset of field: whisper_full_params' "$file" || true
+          done
