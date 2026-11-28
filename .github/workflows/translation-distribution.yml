@@ -62,11 +62,16 @@ jobs:
           timeout --signal=TERM 240 strace -f -qq -e trace=network -o "$RUNNER_TEMP/network.trace" \
             target/debug/speech-studio --cli translate-text-en-fr \
             "$RUNNER_TEMP/source.txt" "$RUNNER_TEMP/french.txt" '' > "$RUNNER_TEMP/result.json"
+          printf 'Pack verification result:\n'
+          cat "$RUNNER_TEMP/verify.json"
+          printf '\nTranslation result JSON:\n'
+          cat "$RUNNER_TEMP/result.json"
+          printf '\nTranslated text:\n'
+          cat "$RUNNER_TEMP/french.txt"
+          printf '\n'
           grep -qi 'bonjour' "$RUNNER_TEMP/french.txt"
           ! grep -Eq 'socket\(AF_INET|socket\(AF_INET6|connect\(' "$RUNNER_TEMP/network.trace"
           python3 -m unittest discover -s packaging -p 'test_translation_model_pack.py' -v
-          cat "$RUNNER_TEMP/result.json"
-          cat "$RUNNER_TEMP/french.txt"
 
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
