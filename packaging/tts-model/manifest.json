@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "id": "tts-en-us-ljspeech-medium-int8",
+  "version": "sherpa-onnx 2.0.3 / vits-piper-en_US-ljspeech-medium-int8",
+  "engine": "sherpa-onnx",
+  "engine_version": "2.0.3",
+  "voice": "en_US-ljspeech-medium-int8",
+  "language": "en_US",
+  "speakers": 1,
+  "source_archive": "https://github.com/k2-fsa/sherpa-onnx/releases/download/tts-models/vits-piper-en_US-ljspeech-medium-int8.tar.bz2",
+  "source_archive_size_bytes": 21090429,
+  "source_archive_sha256": "24dc3bd77dd48c291e52c297878d3437c9492f245d823d7f6a06c4bbb67f4b6b",
+  "voice_dataset": "LJ Speech Dataset",
+  "voice_dataset_url": "https://keithito.com/LJ-Speech-Dataset/",
+  "voice_dataset_license": "Public domain, per upstream MODEL_CARD; model weights are distributed separately and the upstream card is retained.",
+  "model_weights_license": "Not stated in the upstream MODEL_CARD or source archive; redistribution rights for these weights require review. Do not distribute this pack publicly until resolved.",
+  "files": [
+    {
+      "name": "en_US-ljspeech-medium.onnx",
+      "size_bytes": 19349795,
+      "sha256": "206a8403baad4df7642156918a6ebe205798290d82f24d0d0119d7afa8a2738e"
+    },
+    {
+      "name": "en_US-ljspeech-medium.onnx.json",
+      "size_bytes": 4972,
+      "sha256": "141d612cc0a95ed7efc1ca936b845c2364967f2e9217c5dbfcf69fc4d6c65860"
+    },
+    {
+      "name": "tokens.txt",
+      "size_bytes": 940,
+      "sha256": "ef3a7e4a8d1af0c9d4dc45aaae1a6242ebe24a7ed6f3d025a49eb29682784c6d"
+    },
+    {
+      "name": "MODEL_CARD",
+      "size_bytes": 517,
+      "sha256": "fbee1529c89d36b3fe76d7e9f3f832dce17f44900a52d76a9bda735654766b4d"
+    }
+  ]
+}
