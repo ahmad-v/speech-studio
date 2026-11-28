@@ -3,9 +3,9 @@
 use crate::recording::{enumerate_inputs, start_capture, CaptureSession, InputDevice};
 use crate::{
     audio_model::{
-        active_cue, clamp_seek, decode_workspace_project, encode_workspace_project, format_time,
-        matching_cue_indices, transport_action, waveform_seek, CueHistory, DecodedWorkspaceProject,
-        TransportAction,
+        active_cue_at_audio_position, audio_position_for_cue, clamp_seek, decode_workspace_project,
+        encode_workspace_project, format_time, matching_cue_indices, parse_transcript_offset,
+        transport_action, waveform_seek, CueHistory, DecodedWorkspaceProject, TransportAction,
     },
     load_playback_clip, open_audio_decoder, parse_stamp, stamp, PlaybackClip, Segment,
 };
@@ -174,6 +174,8 @@ struct State {
     page_start: usize,
     cue_start_text: String,
     cue_end_text: String,
+    transcript_offset_ms: i64,
+    transcript_offset_text: String,
     cue_text: text_editor::Content,
     find_text: String,
     replacement_text: String,
@@ -209,6 +211,8 @@ impl State {
                 page_start: 0,
                 cue_start_text: String::new(),
                 cue_end_text: String::new(),
+                transcript_offset_ms: 0,
+                transcript_offset_text: "0".into(),
                 cue_text: text_editor::Content::new(),
                 find_text: String::new(),
                 replacement_text: String::new(),
@@ -305,6 +309,8 @@ impl State {
                     self.page_start = 0;
                     self.cue_start_text.clear();
                     self.cue_end_text.clear();
+                    self.transcript_offset_ms = project.transcript_offset_ms;
+                    self.transcript_offset_text = project.transcript_offset_ms.to_string();
                     self.cue_text = text_editor::Content::new();
                     self.find_text.clear();
                     self.replacement_text.clear();
@@ -334,7 +340,12 @@ impl State {
                 );
             }
             Message::ProjectSavePath(Some(path)) => {
-                match save_project(&path, self.cues.cues(), self.view.audio_path.as_deref()) {
+                match save_project(
+                    &path,
+                    self.cues.cues(),
+                    self.view.audio_path.as_deref(),
+                    self.transcript_offset_ms,
+                ) {
                     Ok(()) => {
                         self.linked_audio = self.view.audio_path.as_ref().and_then(|audio| {
                             relative_media_path(&path, audio).ok().map(PathBuf::from)
@@ -367,7 +378,9 @@ impl State {
                     self.cue_start_text = stamp(start);
                     self.cue_end_text = stamp(end);
                     self.cue_text = text_editor::Content::with_text(&text);
-                    self.send(Command::Seek(start));
+                    let audio_position = audio_position_for_cue(start, self.transcript_offset_ms)
+                        .min(self.view.duration_ms);
+                    self.send(Command::Seek(audio_position));
                 }
             }
             Message::CuePagePrevious => {
@@ -381,6 +394,19 @@ impl State {
             }
             Message::CueStartChanged(value) => self.cue_start_text = value,
             Message::CueEndChanged(value) => self.cue_end_text = value,
+            Message::TranscriptOffsetChanged(value) => self.transcript_offset_text = value,
+            Message::ApplyTranscriptOffset => {
+                match parse_transcript_offset(&self.transcript_offset_text) {
+                    Ok(offset) => {
+                        self.transcript_offset_ms = offset;
+                        self.transcript_offset_text = offset.to_string();
+                        self.notice = format!("Transcript offset applied: {offset} ms.");
+                    }
+                    Err(error) => {
+                        self.notice = format!("Transcript offset was not changed: {error}");
+                    }
+                }
+            }
             Message::CueTextAction(action) => self.cue_text.perform(action),
             Message::ApplyCueText => {
                 if let Some(index) = self.selected_cue {
@@ -496,7 +522,11 @@ impl State {
             Message::Tick => {
                 self.view = lock_snapshot(&self.snapshot).clone();
                 if self.find_text.is_empty() {
-                    if let Some(active) = active_cue(self.cues.cues(), self.view.position_ms) {
+                    if let Some(active) = active_cue_at_audio_position(
+                        self.cues.cues(),
+                        self.view.position_ms,
+                        self.transcript_offset_ms,
+                    ) {
                         let page_start = active / CUES_PER_PAGE * CUES_PER_PAGE;
                         if page_start != self.page_start {
                             self.page_start = page_start;
@@ -550,7 +580,8 @@ impl State {
         .width(Length::Fill)
         .height(Length::Fixed(160.0));
         let cues = self.cues.cues();
-        let active = active_cue(cues, self.view.position_ms);
+        let active =
+            active_cue_at_audio_position(cues, self.view.position_ms, self.transcript_offset_ms);
         let matching_indices = matching_cue_indices(cues, &self.find_text);
         let visible_cues = matching_indices
             .iter()
@@ -651,6 +682,15 @@ impl State {
                         ),
                     ]
                     .spacing(10)
+                    .align_y(iced::Alignment::Center)
+                    .wrap(),
+                    row![
+                        text("Transcript offset (ms; positive shifts cues later)"),
+                        text_input("0", &self.transcript_offset_text)
+                            .on_input(Message::TranscriptOffsetChanged),
+                        button("Apply offset").on_press(Message::ApplyTranscriptOffset),
+                    ]
+                    .spacing(8)
                     .align_y(iced::Alignment::Center)
                     .wrap(),
                     row![
@@ -789,6 +829,8 @@ enum Message {
     CuePageNext,
     CueStartChanged(String),
     CueEndChanged(String),
+    TranscriptOffsetChanged(String),
+    ApplyTranscriptOffset,
     CueTextAction(text_editor::Action),
     ApplyCueText,
     FindTextChanged(String),
@@ -810,7 +852,12 @@ fn load_transcript(path: &Path) -> Result<DecodedWorkspaceProject, String> {
     decode_workspace_project(&bytes, is_json)
 }
 
-fn save_project(path: &Path, cues: &[Segment], audio_path: Option<&Path>) -> Result<(), String> {
+fn save_project(
+    path: &Path,
+    cues: &[Segment],
+    audio_path: Option<&Path>,
+    transcript_offset_ms: i64,
+) -> Result<(), String> {
     if !path
         .extension()
         .and_then(|extension| extension.to_str())
@@ -821,7 +868,7 @@ fn save_project(path: &Path, cues: &[Segment], audio_path: Option<&Path>) -> Res
     let relative_audio = audio_path
         .map(|audio| relative_media_path(path, audio))
         .transpose()?;
-    let bytes = encode_workspace_project(cues, relative_audio.as_deref())?;
+    let bytes = encode_workspace_project(cues, relative_audio.as_deref(), transcript_offset_ms)?;
     write_bytes(path, &bytes).map_err(|error| error.message)
 }
 
