@@ -50,6 +50,14 @@ jobs:
           EXPECTED_ARCH: ${{ matrix.arch }}
         run: test "$RUNNER_ARCH" = "$EXPECTED_ARCH"
 
+      - name: Align Whisper with the private Sherpa MSVC runtime
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Sherpa's verified Windows static libraries use /MT. Build Whisper's
+          # C/C++ objects with the same CRT to avoid incompatible mixed-runtime links.
+          'CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded$<$<CONFIG:Debug>:Debug>' >> $env:GITHUB_ENV
+
       - name: Install Linux GUI prerequisites
         if: runner.os == 'Linux'
         run: |
