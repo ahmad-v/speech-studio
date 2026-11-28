@@ -190,12 +190,21 @@
     },
     {
       "operation": "transcribe",
-      "description": "Optional CPU Whisper adapter with app-relative English Tiny or multilingual Tiny packs; the native workspace verifies the selected manifest byte count and SHA-256 in the background before enabling inference; multilingual mode requests automatic language detection",
+      "description": "Optional CPU Whisper adapter with app-relative English Tiny or multilingual Tiny packs; the native workspace verifies the selected manifest byte count and SHA-256 in the background before enabling inference; multilingual mode requests automatic language detection; standard ASR reports experimental speech segments for review",
       "status": "implemented-unverified",
       "targets": [
         "x86_64-unknown-linux-gnu"
       ],
-      "fixture_status": "Linux x86_64 offline app-relative English inference smoke passed; native optional-ASR build/tests passed on five targets; local pack installer and bundle extractor tests pass; ASR distribution workflow has not run; multilingual WER/CER and CPU resource measurements remain open"
+      "fixture_status": "Offline application-relative English inference has a prior Linux x64 smoke; ASR-enabled optional build and tests passed five-target CI at prior validated source; model distribution now verifies/install-tests the English and multilingual packs, while multilingual accuracy and resource measurements remain unverified"
+    },
+    {
+      "operation": "translate-to-english",
+      "description": "Experimental offline speech-audio translation to English using the private multilingual Whisper Tiny model; not general text or multilingual translation",
+      "status": "implemented-unverified",
+      "targets": [
+        "x86_64-unknown-linux-gnu"
+      ],
+      "fixture_status": "Reuses verified offline multilingual ASR model and transcript editor; model-selection guard test added; inference output, language coverage, translation quality and per-target native validation pending"
     },
     {
       "operation": "replace-cue-text",

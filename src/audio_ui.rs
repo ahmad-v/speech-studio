@@ -352,9 +352,35 @@ impl State {
                         "Transcribing with {}. Existing cues are replaced when the result is ready; Undo restores them.",
                         self.asr_model
                     );
-                    return transcribe_task(path, self.asr_model, job);
+                    return transcribe_task(path, self.asr_model, false, job);
                 } else {
                     self.notice = "Open audio before starting transcription.".into();
+                }
+            }
+            #[cfg(feature = "asr")]
+            Message::TranslateToEnglish => {
+                if self.transcribing {
+                    self.notice = "A speech job is already active.".into();
+                } else if self.asr_model != AsrModel::MultilingualTiny {
+                    self.notice =
+                        "Speech-to-English translation requires the Multilingual Tiny model."
+                            .into();
+                } else if self.model_checking
+                    || !self
+                        .model_status
+                        .as_ref()
+                        .is_some_and(|status| status.is_ok())
+                {
+                    self.notice =
+                        "Wait for the multilingual model pack to finish verification.".into();
+                } else if let Some(path) = self.view.audio_path.clone() {
+                    let job = Job::new();
+                    self.transcription_job = job.clone();
+                    self.transcribing = true;
+                    self.notice = "Translating speech to English with the offline multilingual model. Existing cues are replaced when the result is ready; Undo restores them.".into();
+                    return transcribe_task(path, self.asr_model, true, job);
+                } else {
+                    self.notice = "Open audio before translating speech.".into();
                 }
             }
             #[cfg(feature = "asr")]
@@ -363,7 +389,7 @@ impl State {
                 self.notice = "Cancellation requested. Whisper checks it after native inference, so the current inference call may finish first.".into();
             }
             #[cfg(feature = "asr")]
-            Message::TranscriptionFinished(source, result) => {
+            Message::TranscriptionFinished(source, translated, result) => {
                 self.transcribing = false;
                 if self.view.audio_path.as_deref() != Some(source.as_path()) {
                     self.notice =
@@ -381,9 +407,11 @@ impl State {
                                     self.cue_text = text_editor::Content::new();
                                     self.transcript_offset_text = "0".into();
                                     self.find_text.clear();
-                                    self.notice = format!(
-                                        "Created {count} experimental cues. Review the transcript and timestamps; WER/CER and language accuracy are not established."
-                                    );
+                                    self.notice = if translated {
+                                        format!("Created {count} experimental English translation cues. Review the translation and timestamps; language quality has not been established.")
+                                    } else {
+                                        format!("Created {count} experimental transcript cues. Review the transcript and timestamps; WER/CER and language accuracy are not established.")
+                                    };
                                 }
                                 Err(error) => {
                                     self.notice = format!("Transcription was not applied: {error}");
@@ -391,7 +419,11 @@ impl State {
                             }
                         }
                         Err(error) => {
-                            self.notice = format!("Transcription failed: {error}");
+                            self.notice = if translated {
+                                format!("Speech translation failed: {error}")
+                            } else {
+                                format!("Transcription failed: {error}")
+                            };
                         }
                     }
                 }
@@ -809,7 +841,7 @@ impl State {
                 .is_some_and(|status| status.is_ok());
         #[cfg(feature = "asr")]
         let model_message = if self.transcribing {
-            "Transcription runs in the background; Whisper cancellation is checked after native inference."
+            "Speech processing runs in the background; Whisper cancellation is checked after native inference."
                 .to_owned()
         } else {
             model_status
@@ -823,7 +855,7 @@ impl State {
                 Message::AsrModelChanged,
             ),
             button(if self.transcribing {
-                "Cancel transcription"
+                "Cancel speech job"
             } else {
                 "Transcribe loaded audio"
             })
@@ -831,6 +863,16 @@ impl State {
                 Some(Message::CancelTranscription)
             } else if self.view.loaded && model_ready {
                 Some(Message::Transcribe)
+            } else {
+                None
+            }),
+            button("Translate speech to English").on_press_maybe(if self.transcribing {
+                None
+            } else if self.view.loaded
+                && self.asr_model == AsrModel::MultilingualTiny
+                && model_ready
+            {
+                Some(Message::TranslateToEnglish)
             } else {
                 None
             }),
@@ -1018,19 +1060,28 @@ impl Drop for State {
 }
 
 #[cfg(feature = "asr")]
-fn transcribe_task(path: PathBuf, model: AsrModel, job: Job) -> Task<Message> {
+fn transcribe_task(
+    path: PathBuf,
+    model: AsrModel,
+    translate_to_english: bool,
+    job: Job,
+) -> Task<Message> {
     Task::perform(
         async move {
             let worker_path = path.clone();
             let result = thread::spawn(move || {
-                crate::transcribe_file(&worker_path, model.parameter(), &job)
-                    .map_err(|error| error.message)
+                if translate_to_english {
+                    crate::translate_speech_to_english_file(&worker_path, model.parameter(), &job)
+                } else {
+                    crate::transcribe_file(&worker_path, model.parameter(), &job)
+                }
+                .map_err(|error| error.message)
             })
             .join()
             .unwrap_or_else(|_| Err("Offline transcription worker stopped unexpectedly".into()));
-            (path, result)
+            (path, translate_to_english, result)
         },
-        |(path, result)| Message::TranscriptionFinished(path, result),
+        |(path, translated, result)| Message::TranscriptionFinished(path, translated, result),
     )
 }
 
@@ -1093,9 +1144,11 @@ enum Message {
     #[cfg(feature = "asr")]
     Transcribe,
     #[cfg(feature = "asr")]
+    TranslateToEnglish,
+    #[cfg(feature = "asr")]
     CancelTranscription,
     #[cfg(feature = "asr")]
-    TranscriptionFinished(PathBuf, std::result::Result<Vec<Segment>, String>),
+    TranscriptionFinished(PathBuf, bool, std::result::Result<Vec<Segment>, String>),
     Tick,
 }
 
