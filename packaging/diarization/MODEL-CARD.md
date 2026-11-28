@@ -1,7 +1,7 @@
 # Offline speaker diarization model pack
 
-Pack ID: `speaker-diarization-pyannote3-3dspeaker-v1`  
-Inference engine: sherpa-onnx 2.0.3 (separately licensed; see dependency notices).  
+Pack ID: `speaker-diarization-pyannote3-3dspeaker-v1`
+Inference engine: sherpa-onnx 2.0.3 (separately licensed; see dependency notices).
 Input: mono 16 kHz audio. The application limits a job to ten minutes.
 
 ## Model assets and rights
