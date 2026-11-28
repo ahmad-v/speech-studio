@@ -5,6 +5,7 @@ const MAX_HISTORY: usize = 20;
 const MAX_CUES: usize = 20_000;
 const MAX_TIMESTAMP_MS: u64 = 100 * 60 * 60 * 1000 - 1;
 const MAX_EDITED_TRANSCRIPT_BYTES: usize = 2 * 1024 * 1024;
+const MAX_SYNC_OFFSET_MS: i64 = MAX_TIMESTAMP_MS as i64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TransportAction {
@@ -91,6 +92,45 @@ pub(crate) fn active_cue(cues: &[Segment], position_ms: u64) -> Option<usize> {
         .position(|cue| cue.start <= position_ms && position_ms < cue.end)
 }
 
+pub(crate) fn active_cue_at_audio_position(
+    cues: &[Segment],
+    audio_position_ms: u64,
+    transcript_offset_ms: i64,
+) -> Option<usize> {
+    let transcript_position =
+        transcript_position_for_audio(audio_position_ms, transcript_offset_ms)?;
+    active_cue(cues, transcript_position)
+}
+
+/// Converts an audio playhead position to the transcript timeline. A positive
+/// offset moves transcript cues later relative to the audio.
+pub(crate) fn transcript_position_for_audio(
+    audio_position_ms: u64,
+    transcript_offset_ms: i64,
+) -> Option<u64> {
+    let position = i128::from(audio_position_ms) - i128::from(transcript_offset_ms);
+    u64::try_from(position).ok()
+}
+
+/// Converts a cue start to the audio timeline, clamping before-zero seeks to 0.
+pub(crate) fn audio_position_for_cue(cue_position_ms: u64, transcript_offset_ms: i64) -> u64 {
+    let position = i128::from(cue_position_ms) + i128::from(transcript_offset_ms);
+    position.clamp(0, i128::from(u64::MAX)) as u64
+}
+
+pub(crate) fn parse_transcript_offset(value: &str) -> Result<i64, String> {
+    let offset = value
+        .trim()
+        .parse::<i64>()
+        .map_err(|_| "Enter a whole-number offset in milliseconds".to_owned())?;
+    if !(-MAX_SYNC_OFFSET_MS..=MAX_SYNC_OFFSET_MS).contains(&offset) {
+        return Err(format!(
+            "Offset must be between -{MAX_SYNC_OFFSET_MS} and {MAX_SYNC_OFFSET_MS} ms"
+        ));
+    }
+    Ok(offset)
+}
+
 pub(crate) fn matching_cue_indices(cues: &[Segment], query: &str) -> Vec<usize> {
     cues.iter()
         .enumerate()
@@ -107,6 +147,7 @@ fn decode_project(bytes: &[u8], is_json: bool) -> Result<Vec<Segment>, String> {
 pub(crate) struct DecodedWorkspaceProject {
     pub(crate) segments: Vec<Segment>,
     pub(crate) audio_path: Option<PathBuf>,
+    pub(crate) transcript_offset_ms: i64,
 }
 
 #[derive(serde::Deserialize)]
@@ -118,11 +159,22 @@ struct WorkspaceProjectV2 {
     audio_path: Option<String>,
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct WorkspaceProjectV3 {
+    schema_version: u32,
+    segments: Vec<Segment>,
+    #[serde(default)]
+    audio_path: Option<String>,
+    #[serde(default)]
+    transcript_offset_ms: i64,
+}
+
 pub(crate) fn decode_workspace_project(
     bytes: &[u8],
     is_json: bool,
 ) -> Result<DecodedWorkspaceProject, String> {
-    let (cues, audio_path) = if is_json {
+    let (cues, audio_path, transcript_offset_ms) = if is_json {
         let header: serde_json::Value =
             serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
         match header
@@ -132,7 +184,7 @@ pub(crate) fn decode_workspace_project(
             Some(1) => {
                 let project: Transcript =
                     serde_json::from_value(header).map_err(|error| error.to_string())?;
-                (project.segments, None)
+                (project.segments, None, 0)
             }
             Some(2) => {
                 let project: WorkspaceProjectV2 =
@@ -144,13 +196,26 @@ pub(crate) fn decode_workspace_project(
                     .audio_path
                     .map(|path| validate_relative_audio_path(&path).map(PathBuf::from))
                     .transpose()?;
-                (project.segments, audio_path)
+                (project.segments, audio_path, 0)
+            }
+            Some(3) => {
+                let project: WorkspaceProjectV3 =
+                    serde_json::from_value(header).map_err(|error| error.to_string())?;
+                if project.schema_version != 3 {
+                    return Err("Unsupported audio workspace project version".into());
+                }
+                validate_transcript_offset(project.transcript_offset_ms)?;
+                let audio_path = project
+                    .audio_path
+                    .map(|path| validate_relative_audio_path(&path).map(PathBuf::from))
+                    .transpose()?;
+                (project.segments, audio_path, project.transcript_offset_ms)
             }
             _ => return Err("Unsupported transcript project version".into()),
         }
     } else {
         let source = std::str::from_utf8(bytes).map_err(|error| error.to_string())?;
-        (parse(source).map_err(|error| error.message)?, None)
+        (parse(source).map_err(|error| error.message)?, None, 0)
     };
     if cues.len() > MAX_CUES || cues.is_empty() {
         return Err("Project must contain between 1 and 20,000 cues".into());
@@ -162,6 +227,7 @@ pub(crate) fn decode_workspace_project(
     Ok(DecodedWorkspaceProject {
         segments: cues,
         audio_path,
+        transcript_offset_ms,
     })
 }
 
@@ -183,6 +249,7 @@ pub(crate) fn encode_project(cues: &[Segment]) -> Result<Vec<u8>, String> {
 pub(crate) fn encode_workspace_project(
     cues: &[Segment],
     audio_path: Option<&str>,
+    transcript_offset_ms: i64,
 ) -> Result<Vec<u8>, String> {
     if cues.is_empty() || cues.len() > MAX_CUES {
         return Err("Project must contain between 1 and 20,000 cues".into());
@@ -191,23 +258,38 @@ pub(crate) fn encode_workspace_project(
     if parse(&draft).map_err(|error| error.message)? != cues {
         return Err("Transcript project does not round trip through SRT".into());
     }
-    if let Some(path) = audio_path {
-        validate_relative_audio_path(path)?;
+    validate_transcript_offset(transcript_offset_ms)?;
+    if audio_path.is_some() || transcript_offset_ms != 0 {
+        if let Some(path) = audio_path {
+            validate_relative_audio_path(path)?;
+        }
         #[derive(serde::Serialize)]
         struct WorkspaceProject<'a> {
             schema_version: u32,
-            audio_path: &'a str,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            audio_path: Option<&'a str>,
+            transcript_offset_ms: i64,
             segments: &'a [Segment],
         }
         serde_json::to_vec_pretty(&WorkspaceProject {
-            schema_version: 2,
-            audio_path: path,
+            schema_version: 3,
+            audio_path,
+            transcript_offset_ms,
             segments: cues,
         })
         .map_err(|error| error.to_string())
     } else {
         encode_project(cues)
     }
+}
+
+fn validate_transcript_offset(offset_ms: i64) -> Result<(), String> {
+    if !(-MAX_SYNC_OFFSET_MS..=MAX_SYNC_OFFSET_MS).contains(&offset_ms) {
+        return Err(format!(
+            "Transcript offset must be between -{MAX_SYNC_OFFSET_MS} and {MAX_SYNC_OFFSET_MS} ms"
+        ));
+    }
+    Ok(())
 }
 
 fn validate_relative_audio_path(path: &str) -> Result<&str, String> {
@@ -225,14 +307,26 @@ fn validate_relative_audio_path(path: &str) -> Result<&str, String> {
 
 pub(crate) struct CueHistory {
     current: Vec<Segment>,
-    undo: Vec<Vec<Segment>>,
-    redo: Vec<Vec<Segment>>,
+    transcript_offset_ms: i64,
+    undo: Vec<CueSnapshot>,
+    redo: Vec<CueSnapshot>,
+}
+
+struct CueSnapshot {
+    cues: Vec<Segment>,
+    transcript_offset_ms: i64,
 }
 
 impl CueHistory {
     pub(crate) fn new(cues: Vec<Segment>) -> Self {
+        Self::with_transcript_offset(cues, 0)
+    }
+
+    pub(crate) fn with_transcript_offset(cues: Vec<Segment>, transcript_offset_ms: i64) -> Self {
+        debug_assert!(validate_transcript_offset(transcript_offset_ms).is_ok());
         Self {
             current: cues,
+            transcript_offset_ms,
             undo: Vec::new(),
             redo: Vec::new(),
         }
@@ -240,6 +334,20 @@ impl CueHistory {
 
     pub(crate) fn cues(&self) -> &[Segment] {
         &self.current
+    }
+
+    pub(crate) fn transcript_offset_ms(&self) -> i64 {
+        self.transcript_offset_ms
+    }
+
+    pub(crate) fn set_transcript_offset(&mut self, offset_ms: i64) -> Result<(), String> {
+        validate_transcript_offset(offset_ms)?;
+        if offset_ms != self.transcript_offset_ms {
+            self.push_current_to_undo();
+            self.transcript_offset_ms = offset_ms;
+            self.redo.clear();
+        }
+        Ok(())
     }
 
     #[cfg(all(feature = "gui", feature = "audio-playback"))]
@@ -340,19 +448,31 @@ impl CueHistory {
         if parse(&draft).map_err(|error| error.message)? != changed {
             return Err(invalid_message.into());
         }
-        self.undo
-            .push(std::mem::replace(&mut self.current, changed));
-        if self.undo.len() > MAX_HISTORY {
-            self.undo.remove(0);
-        }
+        self.push_current_to_undo();
+        self.current = changed;
         self.redo.clear();
         Ok(())
     }
 
+    fn snapshot(&self) -> CueSnapshot {
+        CueSnapshot {
+            cues: self.current.clone(),
+            transcript_offset_ms: self.transcript_offset_ms,
+        }
+    }
+
+    fn push_current_to_undo(&mut self) {
+        self.undo.push(self.snapshot());
+        if self.undo.len() > MAX_HISTORY {
+            self.undo.remove(0);
+        }
+    }
+
     pub(crate) fn undo(&mut self) -> bool {
         if let Some(previous) = self.undo.pop() {
-            self.redo
-                .push(std::mem::replace(&mut self.current, previous));
+            self.redo.push(self.snapshot());
+            self.current = previous.cues;
+            self.transcript_offset_ms = previous.transcript_offset_ms;
             true
         } else {
             false
@@ -361,7 +481,9 @@ impl CueHistory {
 
     pub(crate) fn redo(&mut self) -> bool {
         if let Some(next) = self.redo.pop() {
-            self.undo.push(std::mem::replace(&mut self.current, next));
+            self.push_current_to_undo();
+            self.current = next.cues;
+            self.transcript_offset_ms = next.transcript_offset_ms;
             true
         } else {
             false
@@ -434,6 +556,47 @@ mod tests {
         assert_eq!(active_cue(&cues, 0), Some(0));
         assert_eq!(active_cue(&cues, 1000), Some(1));
         assert_eq!(active_cue(&cues, 2000), None);
+    }
+
+    #[test]
+    fn transcript_offset_moves_cue_highlighting_and_cue_seeking_consistently() {
+        let cues = crate::parse("1\n00:00:01,000 --> 00:00:02,000\nWord").unwrap();
+        assert_eq!(active_cue_at_audio_position(&cues, 1400, 500), None);
+        assert_eq!(active_cue_at_audio_position(&cues, 1500, 500), Some(0));
+        assert_eq!(audio_position_for_cue(1000, 500), 1500);
+
+        assert_eq!(active_cue_at_audio_position(&cues, 500, -500), Some(0));
+        assert_eq!(audio_position_for_cue(1000, -500), 500);
+        assert_eq!(transcript_position_for_audio(499, 500), None);
+        assert_eq!(audio_position_for_cue(100, -500), 0);
+    }
+
+    #[test]
+    fn transcript_offset_parser_is_signed_bounded_and_requires_integer_milliseconds() {
+        assert_eq!(parse_transcript_offset("+250"), Ok(250));
+        assert_eq!(parse_transcript_offset(" -250 "), Ok(-250));
+        assert!(parse_transcript_offset("1.5").is_err());
+        assert!(parse_transcript_offset("999999999999999999999").is_err());
+        assert!(parse_transcript_offset("360000001").is_err());
+    }
+
+    #[test]
+    fn transcript_offset_uses_the_shared_bounded_undo_redo_history() {
+        let cues = crate::parse("1\n00:00:00,000 --> 00:00:01,000\nHello").unwrap();
+        let mut history = CueHistory::new(cues);
+        history.set_transcript_offset(250).unwrap();
+        history.set_text(0, "Hello again").unwrap();
+
+        assert!(history.undo());
+        assert_eq!(history.cues()[0].text, "Hello");
+        assert_eq!(history.transcript_offset_ms(), 250);
+        assert!(history.undo());
+        assert_eq!(history.transcript_offset_ms(), 0);
+        assert!(history.redo());
+        assert_eq!(history.transcript_offset_ms(), 250);
+        assert!(history.redo());
+        assert_eq!(history.cues()[0].text, "Hello again");
+        assert_eq!(history.transcript_offset_ms(), 250);
     }
 
     #[test]
@@ -523,24 +686,49 @@ mod tests {
     #[test]
     fn audio_workspace_projects_roundtrip_relative_media_and_keep_legacy_json() {
         let cues = crate::parse("1\n00:00:00,100 --> 00:00:01,000\nHello").unwrap();
-        let json = encode_workspace_project(&cues, Some("../media/interview.wav")).unwrap();
+        let json = encode_workspace_project(&cues, Some("../media/interview.wav"), 0).unwrap();
         let project = decode_workspace_project(&json, true).unwrap();
         assert_eq!(project.segments, cues);
         assert_eq!(
             project.audio_path,
             Some(PathBuf::from("../media/interview.wav"))
         );
+        assert_eq!(project.transcript_offset_ms, 0);
 
         let legacy = encode_project(&cues).unwrap();
         let migrated = decode_workspace_project(&legacy, true).unwrap();
         assert_eq!(migrated.segments, cues);
         assert_eq!(migrated.audio_path, None);
+        assert_eq!(migrated.transcript_offset_ms, 0);
+    }
+
+    #[test]
+    fn workspace_v3_roundtrips_signed_offset_and_keeps_v1_v2_readable() {
+        let cues = crate::parse("1\n00:00:00,100 --> 00:00:01,000\nHello").unwrap();
+        let json = encode_workspace_project(&cues, Some("../media/audio.wav"), -125).unwrap();
+        let value: serde_json::Value = serde_json::from_slice(&json).unwrap();
+        assert_eq!(value["schema_version"], 3);
+        assert_eq!(value["transcript_offset_ms"], -125);
+        let decoded = decode_workspace_project(&json, true).unwrap();
+        assert_eq!(decoded.segments, cues);
+        assert_eq!(
+            decoded.audio_path,
+            Some(PathBuf::from("../media/audio.wav"))
+        );
+        assert_eq!(decoded.transcript_offset_ms, -125);
+
+        let v2 = br#"{"schema_version":2,"audio_path":"audio.wav","segments":[{"start_ms":100,"end_ms":1000,"text":"Hello"}]}"#;
+        let migrated = decode_workspace_project(v2, true).unwrap();
+        assert_eq!(migrated.transcript_offset_ms, 0);
+        assert_eq!(migrated.audio_path, Some(PathBuf::from("audio.wav")));
+        let invalid_offset = br#"{"schema_version":3,"transcript_offset_ms":400000000,"segments":[{"start_ms":100,"end_ms":1000,"text":"Hello"}]}"#;
+        assert!(decode_workspace_project(invalid_offset, true).is_err());
     }
 
     #[test]
     fn audio_workspace_projects_reject_absolute_or_unknown_media_fields() {
         let cues = crate::parse("1\n00:00:00,100 --> 00:00:01,000\nHello").unwrap();
-        assert!(encode_workspace_project(&cues, Some("/home/user/audio.wav")).is_err());
+        assert!(encode_workspace_project(&cues, Some("/home/user/audio.wav"), 0).is_err());
         assert!(decode_workspace_project(
             br#"{"schema_version":2,"audio_path":"C:\\Users\\user\\audio.wav","segments":[{"start_ms":100,"end_ms":1000,"text":"Hello"}]}"#,
             true,
