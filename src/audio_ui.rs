@@ -629,7 +629,7 @@ impl State {
                         }
                     }
                 };
-                match crate::diarization::reassign_cue(document, cue_index, speaker) {
+                match crate::diarization::reassign_cue_speaker(document, cue_index, speaker) {
                     Ok(()) => self.notice = "Speaker assignment updated.".into(),
                     Err(error) => {
                         self.notice =
