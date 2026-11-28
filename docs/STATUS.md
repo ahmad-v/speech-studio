@@ -25,7 +25,7 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 | open-lrc | Import timed LRC lyric lines into the SRT draft | Linux fixture-tested |
 | prepare-wav | PCM16 WAV at 16, 32, 44.1 or 48 kHz to mono 16 kHz | Linux fixture-tested |
 | audio-info | 16 kHz mono signed PCM16 WAV | Linux fixture-tested |
-| play-wav | Native Iced audio workspace: bounded local WAV/FLAC/MP3/OGG/AAC/AIFF decoding and playback, device enumeration/selection, bounded PCM16 WAV recording, live elapsed status and stop/finalize, waveform seek, synchronized transcript, multiline cue text editing, literal search/replace, timing edits and shared undo/redo; v2 workspace JSON stores relative linked audio and reads v1 projects | Transcript edit, replacement, history and filter tests added; execution awaits hosted Quick; physical audio devices remain unverified |
+| play-wav | Native Iced audio workspace: bounded local WAV/FLAC/MP3/OGG/AAC/AIFF decoding and playback, device enumeration/selection, bounded PCM16 WAV recording, live elapsed status and stop/finalize, waveform seek, synchronized transcript, multiline cue text editing, literal search/replace, timing edits and shared undo/redo; v2 workspace JSON stores relative linked audio and reads v1 projects | Transcript edit, replacement, history and filter tests passed in Check, Integration and Native validation at code head `d74b7a8`; physical audio devices remain unverified |
 | detect-voice-activity | Adaptive RMS and hysteresis intervals from 16 kHz mono PCM16 WAV, JSON report | Linux silence, synthetic activity and operation-output fixtures tested; energy heuristic only |
 | analyze-transcript | Local language estimate, Unicode linguistic counts and subtitle-time rate estimate, JSON report | Linux English, Russian, short-text, overlap and operation-output fixtures tested; estimates only |
 | replace-text | Exact transcript find and replace within cues | Linux fixture and CLI-tested |
@@ -35,7 +35,7 @@ Alpha source is on GitHub. The initial Rust integration checks ran on Linux x86_
 | export-lrc | Export cue start times and text to LRC | Linux fixture-tested |
 | open-json / export-json | Versioned UTF-8 transcript exchange with millisecond timings | Linux fixture and CLI-tested |
 | export-txt | Plain transcript text | Linux fixture-tested |
-| transcribe | Optional CPU whisper-rs adapter, private English or multilingual Tiny pack, or an explicit model path; multilingual pack pins its source bytes and uses language auto-detection | Existing English model app-relative smoke-tested. Multilingual artifact bytes verified against pinned Hugging Face LFS SHA-256; Check and Linux Integration passed at `4412c9f`, while the all-target optional-ASR matrix and pack-artifact workflow are pending. Language quality, WER/CER and runtime RSS not measured |
+| transcribe | Optional CPU whisper-rs adapter, private English or multilingual Tiny pack, or an explicit model path; multilingual pack pins its source bytes and uses language auto-detection | Offline ASR pack workflow 46127520782 passed and uploaded both model packs (155,402,407 bytes combined; 14-day artifact retention). Optional ASR/audio compile and tests passed on Linux x64/ARM64, Windows x64/ARM64 and macOS Apple Silicon at code head `d74b7a8`. Multilingual inference accuracy, WER/CER and runtime CPU memory/performance remain unmeasured |
 
 ## Known gaps
 
