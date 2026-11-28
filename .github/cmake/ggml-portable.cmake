@@ -3,18 +3,15 @@
 # native-CPU default, avoiding binaries tied to the CI runner's CPU features.
 set(GGML_NATIVE OFF CACHE BOOL "Build a portable ggml CPU backend" FORCE)
 
-# The LLVM ARM64 Windows clang-cl toolchain advertises NEON half-float vector
-# support, but ggml's current intrinsic code is incompatible with its __fp16
-# pointer types. Disable this optional vector path for the Windows ARM build;
-# scalar kernels remain available and portable.
+# ggml 0.13's ARM NEON half-load intrinsics use __fp16 pointers, while its
+# internal Windows ARM half representation is uint16_t. clang-cl therefore
+# rejects the base NEON path even when FP16 vector arithmetic is disabled.
+# Build the Windows ARM backend without SIMD until upstream fixes the pointer
+# mismatch. This keeps inference portable at a performance cost on this target.
 if (DEFINED ENV{CC_aarch64_pc_windows_msvc})
     set(CMAKE_SYSTEM_NAME Windows CACHE STRING "Windows ARM64 Whisper target" FORCE)
     set(CMAKE_SYSTEM_PROCESSOR ARM64 CACHE STRING "Windows ARM64 Whisper processor" FORCE)
-    set(GGML_CPU_ARM_ARCH "armv8-a" CACHE STRING "Use baseline ARMv8-A on Windows ARM" FORCE)
-    # clang-cl reports support for -mfp16-format=ieee, but ggml's FP16
-    # vector macros use incompatible __fp16 pointer types with its internal
-    # uint16_t representation. Keep the safe scalar half conversion path.
-    set(GGML_COMPILER_SUPPORTS_FP16_FORMAT_I3E "" CACHE INTERNAL "Disable incompatible clang-cl FP16 vectors" FORCE)
+    set(GGML_CPU_ARM_ARCH "armv8-a+nosimd" CACHE STRING "Use portable scalar ARMv8-A on Windows ARM" FORCE)
 endif()
 
 # whisper-rs-sys' Windows ARM build uses the Ninja generator and its CMake
