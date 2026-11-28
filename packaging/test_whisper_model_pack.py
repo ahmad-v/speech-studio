@@ -81,7 +81,10 @@ class WhisperModelPackTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             manifest_path = root / "manifest.json"
-            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            manifest_text = json.dumps(manifest) + "\n"
+            manifest_path.write_bytes(manifest_text.replace("\n", "\r\n").encode())
+            license_path = root / "LICENSE-MIT"
+            license_path.write_bytes(b"test license\r\n")
             model_path = root / "model.bin"
             model_path.write_bytes(payload)
             archive_path = root / "offline-pack.zip"
@@ -89,7 +92,7 @@ class WhisperModelPackTests(unittest.TestCase):
             try:
                 with mock.patch.object(
                     socket, "socket", side_effect=AssertionError("network access")
-                ):
+                ), mock.patch.object(packer, "SOURCE", root):
                     packer.build_pack(model_path, archive_path, "test-model")
             finally:
                 del packer.MANIFESTS["test-model"]
@@ -99,6 +102,10 @@ class WhisperModelPackTests(unittest.TestCase):
                 self.assertEqual(
                     json.loads(archive.read("engines/test-model/manifest.json")),
                     manifest,
+                )
+                self.assertNotIn(b"\r", archive.read("engines/test-model/manifest.json"))
+                self.assertEqual(
+                    archive.read("engines/test-model/LICENSE-MIT"), b"test license\n"
                 )
                 self.assertIn("engines/test-model/LICENSE-MIT", archive.namelist())
 

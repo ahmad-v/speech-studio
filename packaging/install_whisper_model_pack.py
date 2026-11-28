@@ -11,7 +11,13 @@ import tempfile
 import zipfile
 from pathlib import Path, PurePosixPath
 
-from whisper_model_pack import DEFAULT_MODEL, MANIFESTS, SOURCE, load_manifest
+from whisper_model_pack import (
+    DEFAULT_MODEL,
+    MANIFESTS,
+    SOURCE,
+    canonical_text_bytes,
+    load_manifest,
+)
 
 MAX_PACK_METADATA_BYTES = 64 * 1024
 
@@ -141,8 +147,8 @@ def main():
             args.pack,
             args.application_dir,
             manifest,
-            manifest_path.read_bytes(),
-            (SOURCE / "LICENSE-MIT").read_bytes(),
+            canonical_text_bytes(manifest_path),
+            canonical_text_bytes(SOURCE / "LICENSE-MIT"),
         )
     except (OSError, ValueError, zipfile.BadZipFile, json.JSONDecodeError) as error:
         parser.error(str(error))
