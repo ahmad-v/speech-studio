@@ -65,7 +65,7 @@ work.
 
 Source checks verify manifest fields, archive boundaries, source provenance,
 CMUdict-to-IPA conversion, voice IDs, file hashes, symlink rejection, and
-no-overwrite output behavior. Six packer tests and all 18 Python packaging tests
+no-overwrite output behavior. Seven packer tests and all 19 Python packaging tests
 pass locally. The pinned model, CMUdict, and license were assembled into a
 private pack successfully; this validates the packer against the real inputs,
 not speech generation. Hosted Rust feature compilation and actual offline
