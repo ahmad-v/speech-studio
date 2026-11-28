@@ -8,7 +8,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from whisper_model_pack import MANIFESTS, SOURCE, load_manifest
+from whisper_model_pack import MANIFESTS, SOURCE, canonical_text_bytes, load_manifest
 
 
 def extract_model(pack_path, destination, model_id):
@@ -25,9 +25,9 @@ def extract_model(pack_path, destination, model_id):
             license_member,
         }:
             raise ValueError("offline model pack does not match the selected variant")
-        if archive.read(manifest_member) != manifest_path.read_bytes():
+        if archive.read(manifest_member) != canonical_text_bytes(manifest_path):
             raise ValueError("offline model pack manifest differs from the pinned copy")
-        if archive.read(license_member) != (SOURCE / "LICENSE-MIT").read_bytes():
+        if archive.read(license_member) != canonical_text_bytes(SOURCE / "LICENSE-MIT"):
             raise ValueError("offline model pack license differs from the pinned copy")
         model_info = archive.getinfo(expected)
         if model_info.file_size != manifest["bytes"]:

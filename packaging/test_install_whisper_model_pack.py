@@ -10,6 +10,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from install_whisper_model_pack import install_pack
 import extract_whisper_model as extractor
+from whisper_model_pack import canonical_text_bytes
 
 
 class OfflineModelInstallTests(unittest.TestCase):
@@ -27,7 +28,7 @@ class OfflineModelInstallTests(unittest.TestCase):
             "bytes": len(self.payload),
             "sha256": hashlib.sha256(self.payload).hexdigest(),
         }
-        self.manifest_bytes = json.dumps(self.manifest, sort_keys=True).encode()
+        self.manifest_bytes = json.dumps(self.manifest, sort_keys=True).encode() + b"\n"
         self.license_bytes = b"MIT test license\n"
         self.pack = self.root / "model.zip"
         self.write_pack()
@@ -46,12 +47,16 @@ class OfflineModelInstallTests(unittest.TestCase):
                 archive.writestr(extra[0], extra[1])
 
     def test_installs_verified_model_and_preserves_existing_files(self):
+        manifest_path = self.root / "pinned.json"
+        manifest_path.write_bytes(self.manifest_bytes.replace(b"\n", b"\r\n"))
+        license_path = self.root / "pinned-license"
+        license_path.write_bytes(self.license_bytes.replace(b"\n", b"\r\n"))
         installed = install_pack(
             self.pack,
             self.app,
             self.manifest,
-            self.manifest_bytes,
-            self.license_bytes,
+            canonical_text_bytes(manifest_path),
+            canonical_text_bytes(license_path),
         )
         self.assertEqual(installed, self.app / "engines" / "whisper-test")
         self.assertEqual((installed / "model.bin").read_bytes(), self.payload)
@@ -105,9 +110,9 @@ class OfflineModelInstallTests(unittest.TestCase):
 
     def test_distribution_extractor_verifies_and_never_overwrites(self):
         manifest_path = self.root / "pinned.json"
-        manifest_path.write_bytes(self.manifest_bytes)
+        manifest_path.write_bytes(self.manifest_bytes.replace(b"\n", b"\r\n"))
         license_path = self.root / "LICENSE-MIT"
-        license_path.write_bytes(self.license_bytes)
+        license_path.write_bytes(self.license_bytes.replace(b"\n", b"\r\n"))
         destination = self.root / "bundle-model.bin"
         with mock.patch.object(
             extractor, "load_manifest", return_value=(self.manifest, manifest_path)

@@ -31,6 +31,14 @@ def load_manifest(model_id=DEFAULT_MODEL):
     return manifest, path
 
 
+def canonical_text_bytes(path):
+    """Read pinned text assets identically despite platform checkout EOLs."""
+    content = Path(path).read_bytes().replace(b"\r\n", b"\n")
+    if b"\r" in content:
+        raise ValueError("pinned text asset contains an unsupported bare carriage return")
+    return content
+
+
 def copy_verified(model_path, output, manifest):
     digest = hashlib.sha256()
     count = 0
@@ -52,8 +60,8 @@ def stage_model(model, bundle, model_id=DEFAULT_MODEL):
     try:
         with (folder / manifest["file"]).open("xb") as output:
             copy_verified(model, output, manifest)
-        shutil.copy2(manifest_path, folder / "manifest.json")
-        shutil.copy2(SOURCE / "LICENSE-MIT", folder / "LICENSE-MIT")
+        (folder / "manifest.json").write_bytes(canonical_text_bytes(manifest_path))
+        (folder / "LICENSE-MIT").write_bytes(canonical_text_bytes(SOURCE / "LICENSE-MIT"))
     except (OSError, ValueError):
         shutil.rmtree(folder)
         raise
@@ -71,8 +79,12 @@ def build_pack(model, output, model_id=DEFAULT_MODEL):
         with zipfile.ZipFile(
             staged, "w", compression=zipfile.ZIP_STORED, strict_timestamps=False
         ) as pack:
-            pack.write(manifest_path, (folder / "manifest.json").as_posix())
-            pack.write(SOURCE / "LICENSE-MIT", (folder / "LICENSE-MIT").as_posix())
+            pack.writestr(
+                (folder / "manifest.json").as_posix(), canonical_text_bytes(manifest_path)
+            )
+            pack.writestr(
+                (folder / "LICENSE-MIT").as_posix(), canonical_text_bytes(SOURCE / "LICENSE-MIT")
+            )
             with pack.open(model_member, "w") as member:
                 copy_verified(model, member, manifest)
 
