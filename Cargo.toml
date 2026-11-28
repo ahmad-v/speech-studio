@@ -38,3 +38,4 @@ tempfile = "=3.19.1"
 
 [patch.crates-io]
 whisper-rs-sys = { path = "vendor/whisper-rs-sys" }
+sherpa-onnx-sys = { path = "vendor/sherpa-onnx-sys" }
