@@ -12,11 +12,16 @@ the local CPU and never request a network connection.
 The pack uses `Helsinki-NLP/opus-mt-en-fr`, pinned to Hugging Face revision
 `dd7f6540a7a48a7f4db59e5c0b9c42c8eea67f18`. Its pinned model card declares
 Apache-2.0. The packer includes that model card and the full Apache license
-text. The model weights are approximately 301 MB; two SentencePiece vocabulary
-files, the card, manifest and notices are included as well. No model binary is
-committed to this repository. `packaging/translation-model/manifest.json`
-records exact sizes and SHA-256 values. The engine and tokenizer components
-are separately inventoried in `DEPENDENCIES.md` and `THIRD_PARTY_NOTICES.md`.
+text. The upstream revision stores weights as a legacy PyTorch pickle. The
+distribution workflow first verifies that source file's pinned SHA-256, then
+uses a build-only pinned CPU PyTorch 2.5.1 and safetensors 0.6.2 converter to
+write a deterministic safetensors file for Candle. The converter checks tied
+encoder/decoder embedding aliases are identical before retaining the canonical
+shared tensor. The app itself does not include or invoke Python or PyTorch.
+The approximately 301 MB converted weights, two SentencePiece vocabulary
+files, card, manifest and notices are included in the optional pack. No model
+binary is committed to this repository. The manifest records source provenance,
+conversion tool versions and exact distributed file sizes and SHA-256 values.
 
 The official model card reports historical benchmark scores for its model.
 Those published figures are not a Speech Studio validation result. The
@@ -37,6 +42,11 @@ python3 packaging/translation_model_pack.py install \
   /path/to/opus-mt-en-fr.zip /path/to/SpeechStudio
 ```
 
+Assembly requires the exact build-only dependencies in
+`packaging/translation-conversion-requirements.txt`; the hosted verification
+workflow installs them explicitly. End users need no Python, PyTorch, Rust or
+package manager.
+
 The generated archive contains `engines/opus-mt-en-fr-v1`. A user can extract
 it with the operating system archive utility into the directory containing the
 Speech Studio executable. The GUI **Verify offline model pack** action checks
@@ -47,9 +57,10 @@ the application when moving or installing Speech Studio.
 
 The `install` subcommand is a development/packaging convenience; all Python
 script commands in this section are for maintainers preparing or validating an
-asset pack. To assemble from already-acquired assets without network access,
-pass `--cache-dir` containing the files named by the manifest. Every input
-must still match its pinned size and SHA-256.
+asset pack. To assemble from already-acquired source assets without network
+access, pass `--cache-dir` containing the files named by the upstream source
+manifest. Every input must still match its pinned size and SHA-256 before
+conversion.
 
 ## Bounds and status
 

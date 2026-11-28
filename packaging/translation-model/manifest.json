@@ -5,14 +5,17 @@
   "model_repository": "Helsinki-NLP/opus-mt-en-fr",
   "model_revision": "dd7f6540a7a48a7f4db59e5c0b9c42c8eea67f18",
   "model_license": "Apache-2.0 (model card metadata at the pinned upstream revision)",
+  "source_model_file": "pytorch_model.bin",
+  "source_model_sha256": "cc1de10b49342ad2f33e06bc4474ddd6eaca278474903c4a8636ce15680d64de",
+  "conversion_toolchain": "PyTorch 2.5.1+cpu; safetensors 0.6.2",
   "tokenizer_repository": "Helsinki-NLP/opus-mt-en-fr",
   "tokenizer_revision": "dd7f6540a7a48a7f4db59e5c0b9c42c8eea67f18",
   "language_pair": "English (en) to French (fr)",
   "files": [
     {
-      "name": "pytorch_model.bin",
-      "size_bytes": 300827685,
-      "sha256": "cc1de10b49342ad2f33e06bc4474ddd6eaca278474903c4a8636ce15680d64de"
+      "name": "model.safetensors",
+      "size_bytes": 300803144,
+      "sha256": "174014ba6a746e5d8d1f31470692131c55786dff4daf320cfb882593d674646b"
     },
     {
       "name": "config.json",
@@ -41,8 +44,8 @@
     },
     {
       "name": "THIRD_PARTY_NOTICE.txt",
-      "size_bytes": 321,
-      "sha256": "333b5925e3b185a5aeb507260bd9da4e48b432c615a3d1cbf4f0ce74b96bf5d9"
+      "size_bytes": 483,
+      "sha256": "c7efb399aff131eec6b2269125330b2bcfe1048a29aa2b17a6b04bee4f167aa0"
     }
   ]
 }

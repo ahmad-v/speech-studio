@@ -25,7 +25,25 @@ class TranslationPackTests(unittest.TestCase):
             "target.spm": b"fixture-target-tokenizer",
             "MODEL_CARD.md": b"license: apache-2.0\nopus-mt-en-fr\n",
         }.items()}
-        PACK.ASSETS = {name: (len(data), hashlib.sha256(data).hexdigest()) for name, data in self.assets.items()}
+        PACK.SOURCE_ASSETS = {
+            name: (len(data), hashlib.sha256(data).hexdigest()) for name, data in self.assets.items()
+        }
+        converted = b"fixture-safetensors"
+        PACK.PACK_ASSETS = {
+            "model.safetensors": (len(converted), hashlib.sha256(converted).hexdigest()),
+            **{
+                name: pin
+                for name, pin in PACK.SOURCE_ASSETS.items()
+                if name != "pytorch_model.bin"
+            },
+        }
+        notice = PACK.NOTICE.encode("utf-8")
+        license_path = PACK.ROOT / "LICENSE-APACHE"
+        PACK.PACK_NOTICES = {
+            "LICENSE-APACHE-2.0": (license_path.stat().st_size, PACK.digest(license_path)),
+            "THIRD_PARTY_NOTICE.txt": (len(notice), hashlib.sha256(notice).hexdigest()),
+        }
+        PACK.convert_weights = lambda _source, destination: destination.write_bytes(converted)
         for name, data in self.assets.items():
             (self.root / name).write_bytes(data)
 
@@ -35,7 +53,9 @@ class TranslationPackTests(unittest.TestCase):
         app = self.root / "app"
         installed = PACK.install_pack(pack, app)
         for name, content in self.assets.items():
-            self.assertEqual((installed / name).read_bytes(), content)
+            if name != PACK.SOURCE_MODEL_FILE:
+                self.assertEqual((installed / name).read_bytes(), content)
+        self.assertEqual((installed / "model.safetensors").read_bytes(), b"fixture-safetensors")
         with self.assertRaises(FileExistsError):
             PACK.install_pack(pack, app)
 
@@ -43,10 +63,19 @@ class TranslationPackTests(unittest.TestCase):
         manifest_path = Path(__file__).parent / "translation-model" / "manifest.json"
         self.assertEqual(json.loads(manifest_path.read_text(encoding="utf-8")), PINNED_MANIFEST)
 
+    def test_manifest_records_the_verified_source_and_conversion_toolchain(self):
+        self.assertEqual(PINNED_MANIFEST["source_model_file"], "pytorch_model.bin")
+        self.assertEqual(
+            PINNED_MANIFEST["source_model_sha256"],
+            PACK.SOURCE_MODEL_SHA256,
+        )
+        self.assertEqual(PINNED_MANIFEST["conversion_toolchain"], PACK.CONVERSION_TOOLCHAIN)
+        self.assertIn("model.safetensors", {item["name"] for item in PINNED_MANIFEST["files"]})
+
     def test_pack_rejects_changed_input_and_unsafe_archive_entries(self):
         (self.root / "source.spm").write_bytes(b"modified")
         with self.assertRaises(ValueError):
-            PACK.verify_assets(self.root)
+            PACK.verify_source_assets(self.root)
 
         pack = self.root / "hostile.zip"
         with zipfile.ZipFile(pack, "w") as archive:

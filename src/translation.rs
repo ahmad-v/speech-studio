@@ -35,6 +35,9 @@ struct Manifest {
     model_repository: String,
     model_revision: String,
     model_license: String,
+    source_model_file: String,
+    source_model_sha256: String,
+    conversion_toolchain: String,
     tokenizer_repository: String,
     tokenizer_revision: String,
     language_pair: String,
@@ -57,14 +60,18 @@ fn expected_manifest() -> Manifest {
         model_repository: "Helsinki-NLP/opus-mt-en-fr".into(),
         model_revision: MODEL_REVISION.into(),
         model_license: "Apache-2.0 (model card metadata at the pinned upstream revision)".into(),
+        source_model_file: "pytorch_model.bin".into(),
+        source_model_sha256: "cc1de10b49342ad2f33e06bc4474ddd6eaca278474903c4a8636ce15680d64de"
+            .into(),
+        conversion_toolchain: "PyTorch 2.5.1+cpu; safetensors 0.6.2".into(),
         tokenizer_repository: "Helsinki-NLP/opus-mt-en-fr".into(),
         tokenizer_revision: MODEL_REVISION.into(),
         language_pair: "English (en) to French (fr)".into(),
         files: vec![
             ManifestFile {
-                name: "pytorch_model.bin".into(),
-                size_bytes: 300_827_685,
-                sha256: "cc1de10b49342ad2f33e06bc4474ddd6eaca278474903c4a8636ce15680d64de".into(),
+                name: "model.safetensors".into(),
+                size_bytes: 300_803_144,
+                sha256: "174014ba6a746e5d8d1f31470692131c55786dff4daf320cfb882593d674646b".into(),
             },
             ManifestFile {
                 name: "config.json".into(),
@@ -93,8 +100,8 @@ fn expected_manifest() -> Manifest {
             },
             ManifestFile {
                 name: "THIRD_PARTY_NOTICE.txt".into(),
-                size_bytes: 321,
-                sha256: "333b5925e3b185a5aeb507260bd9da4e48b432c615a3d1cbf4f0ce74b96bf5d9".into(),
+                size_bytes: 483,
+                sha256: "c7efb399aff131eec6b2269125330b2bcfe1048a29aa2b17a6b04bee4f167aa0".into(),
             },
         ],
     }
@@ -277,10 +284,12 @@ pub(crate) fn translate_english_to_french(text: &str, job: &Job) -> Result<Strin
             "Pinned Marian configuration has unsupported dimensions or token IDs",
         ));
     }
-    let weights = root.join("pytorch_model.bin");
-    let variables = VarBuilder::from_pth(&weights, DType::F32, &device).map_err(|error| {
-        Error::input(format!("Could not load the verified Marian model: {error}"))
-    })?;
+    let weights = root.join("model.safetensors");
+    let weight_data = fs::read(&weights)?;
+    let variables = VarBuilder::from_buffered_safetensors(weight_data, DType::F32, &device)
+        .map_err(|error| {
+            Error::input(format!("Could not load the verified Marian model: {error}"))
+        })?;
     let mut model = MTModel::new(&config, variables)
         .map_err(|error| Error::input(format!("Could not initialize Marian inference: {error}")))?;
     let input_ids = Tensor::new(input_tokens.as_slice(), &device)
@@ -357,8 +366,18 @@ mod tests {
         assert_eq!(manifest.language_pair, "English (en) to French (fr)");
         assert_eq!(manifest.model_revision, MODEL_REVISION);
         assert!(manifest.model_license.starts_with("Apache-2.0"));
+        assert_eq!(manifest.source_model_file, "pytorch_model.bin");
+        assert_eq!(
+            manifest.source_model_sha256,
+            "cc1de10b49342ad2f33e06bc4474ddd6eaca278474903c4a8636ce15680d64de"
+        );
+        assert_eq!(
+            manifest.conversion_toolchain,
+            "PyTorch 2.5.1+cpu; safetensors 0.6.2"
+        );
         assert_eq!(manifest.files.len(), 7);
-        assert_eq!(manifest.files[0].size_bytes, 300_827_685);
+        assert_eq!(manifest.files[0].name, "model.safetensors");
+        assert_eq!(manifest.files[0].size_bytes, 300_803_144);
         assert!(manifest.files.iter().all(|file| file.sha256.len() == 64));
     }
 
