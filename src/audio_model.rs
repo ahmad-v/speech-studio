@@ -350,6 +350,27 @@ impl CueHistory {
         Ok(())
     }
 
+    #[cfg(feature = "asr")]
+    pub(crate) fn replace_all(&mut self, changed: Vec<Segment>) -> Result<(), String> {
+        if changed.is_empty() || changed.len() > MAX_CUES {
+            return Err("Transcript must contain between 1 and 20,000 cues".into());
+        }
+        let draft = render(&changed);
+        if draft.len() > MAX_EDITED_TRANSCRIPT_BYTES {
+            return Err("Transcript exceeds the 2 MiB workspace limit".into());
+        }
+        if parse(&draft).map_err(|error| error.message)? != changed {
+            return Err("Transcript cues do not round trip through SRT".into());
+        }
+        if changed != self.current || self.transcript_offset_ms != 0 {
+            self.push_current_to_undo();
+            self.current = changed;
+            self.transcript_offset_ms = 0;
+            self.redo.clear();
+        }
+        Ok(())
+    }
+
     #[cfg(all(feature = "gui", feature = "audio-playback"))]
     pub(crate) fn can_undo(&self) -> bool {
         !self.undo.is_empty()
@@ -597,6 +618,42 @@ mod tests {
         assert!(history.redo());
         assert_eq!(history.cues()[0].text, "Hello again");
         assert_eq!(history.transcript_offset_ms(), 250);
+    }
+
+    #[test]
+    #[cfg(feature = "asr")]
+    fn replacing_transcript_is_validated_and_undoable_with_offset() {
+        let original = crate::parse("1\n00:00:01,000 --> 00:00:02,000\nOriginal").unwrap();
+        let replacement = crate::parse("1\n00:00:00,500 --> 00:00:01,500\nRecognized").unwrap();
+        let mut history = CueHistory::new(original.clone());
+        history.set_transcript_offset(250).unwrap();
+
+        history.replace_all(replacement.clone()).unwrap();
+        assert_eq!(history.cues(), replacement);
+        assert_eq!(history.transcript_offset_ms(), 0);
+        assert!(history.undo());
+        assert_eq!(history.cues(), original);
+        assert_eq!(history.transcript_offset_ms(), 250);
+        assert!(history.redo());
+        assert_eq!(history.cues(), replacement);
+        assert_eq!(history.transcript_offset_ms(), 0);
+    }
+
+    #[test]
+    #[cfg(feature = "asr")]
+    fn replacing_transcript_rejects_empty_or_invalid_cues_without_mutation() {
+        let original = crate::parse("1\n00:00:00,000 --> 00:00:01,000\nOriginal").unwrap();
+        let mut history = CueHistory::new(original.clone());
+        assert!(history.replace_all(Vec::new()).is_err());
+        assert!(history
+            .replace_all(vec![Segment {
+                start: 5,
+                end: 5,
+                text: "Invalid interval".into(),
+            }])
+            .is_err());
+        assert_eq!(history.cues(), original);
+        assert!(!history.undo());
     }
 
     #[test]

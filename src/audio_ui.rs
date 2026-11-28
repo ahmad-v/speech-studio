@@ -28,6 +28,33 @@ use std::{
 
 const CUES_PER_PAGE: usize = 25;
 
+#[cfg(feature = "asr")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AsrModel {
+    EnglishTiny,
+    MultilingualTiny,
+}
+
+#[cfg(feature = "asr")]
+impl std::fmt::Display for AsrModel {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::EnglishTiny => "English Tiny",
+            Self::MultilingualTiny => "Multilingual Tiny",
+        })
+    }
+}
+
+#[cfg(feature = "asr")]
+impl AsrModel {
+    fn parameter(self) -> &'static str {
+        match self {
+            Self::EnglishTiny => "",
+            Self::MultilingualTiny => "multilingual",
+        }
+    }
+}
+
 struct Waveform<'a> {
     peaks: &'a [f32],
     position_ms: u64,
@@ -180,6 +207,12 @@ struct State {
     replacement_text: String,
     linked_audio: Option<PathBuf>,
     notice: String,
+    #[cfg(feature = "asr")]
+    asr_model: AsrModel,
+    #[cfg(feature = "asr")]
+    transcription_job: Job,
+    #[cfg(feature = "asr")]
+    transcribing: bool,
 }
 
 impl State {
@@ -216,6 +249,12 @@ impl State {
                 replacement_text: String::new(),
                 linked_audio: None,
                 notice: String::new(),
+                #[cfg(feature = "asr")]
+                asr_model: AsrModel::EnglishTiny,
+                #[cfg(feature = "asr")]
+                transcription_job: Job::new(),
+                #[cfg(feature = "asr")]
+                transcribing: false,
             },
             Task::none(),
         )
@@ -240,6 +279,11 @@ impl State {
                 );
             }
             Message::FilePicked(Some(path)) => {
+                #[cfg(feature = "asr")]
+                {
+                    self.transcription_job.cancel();
+                    self.transcribing = false;
+                }
                 self.seek_value_ms = None;
                 self.linked_audio = None;
                 self.notice.clear();
@@ -251,6 +295,64 @@ impl State {
                 }
             }
             Message::FilePicked(None) => {}
+            #[cfg(feature = "asr")]
+            Message::AsrModelChanged(model) => self.asr_model = model,
+            #[cfg(feature = "asr")]
+            Message::Transcribe => {
+                if self.transcribing {
+                    self.notice = "A transcription job is already active.".into();
+                } else if let Some(path) = self.view.audio_path.clone() {
+                    let job = Job::new();
+                    self.transcription_job = job.clone();
+                    self.transcribing = true;
+                    self.notice = format!(
+                        "Transcribing with {}. Existing cues are replaced when the result is ready; Undo restores them.",
+                        self.asr_model
+                    );
+                    return transcribe_task(path, self.asr_model, job);
+                } else {
+                    self.notice = "Open audio before starting transcription.".into();
+                }
+            }
+            #[cfg(feature = "asr")]
+            Message::CancelTranscription => {
+                self.transcription_job.cancel();
+                self.notice = "Cancellation requested. Whisper checks it after native inference, so the current inference call may finish first.".into();
+            }
+            #[cfg(feature = "asr")]
+            Message::TranscriptionFinished(source, result) => {
+                self.transcribing = false;
+                if self.view.audio_path.as_deref() != Some(source.as_path()) {
+                    self.notice =
+                        "Discarded transcription because the loaded audio changed.".into();
+                } else {
+                    match result {
+                        Ok(segments) => {
+                            let count = segments.len();
+                            match self.cues.replace_all(segments) {
+                                Ok(()) => {
+                                    self.selected_cue = None;
+                                    self.page_start = 0;
+                                    self.cue_start_text.clear();
+                                    self.cue_end_text.clear();
+                                    self.cue_text = text_editor::Content::new();
+                                    self.transcript_offset_text = "0".into();
+                                    self.find_text.clear();
+                                    self.notice = format!(
+                                        "Created {count} experimental cues. Review the transcript and timestamps; WER/CER and language accuracy are not established."
+                                    );
+                                }
+                                Err(error) => {
+                                    self.notice = format!("Transcription was not applied: {error}");
+                                }
+                            }
+                        }
+                        Err(error) => {
+                            self.notice = format!("Transcription failed: {error}");
+                        }
+                    }
+                }
+            }
             Message::RecordDialog => {
                 return Task::perform(
                     async {
@@ -646,9 +748,37 @@ impl State {
                 matching_indices.len()
             )
         };
+        #[cfg(feature = "asr")]
+        let asr_controls = row![
+            text("Offline ASR model"),
+            pick_list(
+                [AsrModel::EnglishTiny, AsrModel::MultilingualTiny],
+                Some(self.asr_model),
+                Message::AsrModelChanged,
+            ),
+            button(if self.transcribing {
+                "Cancel transcription"
+            } else {
+                "Transcribe loaded audio"
+            })
+            .on_press_maybe(if self.transcribing {
+                Some(Message::CancelTranscription)
+            } else {
+                self.view.loaded.then_some(Message::Transcribe)
+            }),
+            text(if self.transcribing {
+                "Transcription runs in the background; Whisper cancellation is checked after inference."
+            } else {
+                "Offline only. The matching verified model pack must be installed beside the app."
+            }),
+        ]
+        .spacing(8)
+        .align_y(iced::Alignment::Center)
+        .wrap();
+
         scrollable(
-            container(
-                column![
+            container({
+                let controls = column![
                     row![
                         text("Speech Studio audio workspace").size(24),
                         button("Open audio…").on_press(Message::OpenDialog),
@@ -795,8 +925,11 @@ impl State {
                     .wrap(),
                     text("Local processing · playback and recording use host audio devices"),
                 ]
-                .spacing(18),
-            )
+                .spacing(18);
+                #[cfg(feature = "asr")]
+                let controls = controls.push(asr_controls);
+                controls
+            })
             .width(Length::Fill)
             .height(Length::Shrink)
             .padding(24),
@@ -812,8 +945,27 @@ impl State {
 
 impl Drop for State {
     fn drop(&mut self) {
+        #[cfg(feature = "asr")]
+        self.transcription_job.cancel();
         let _ = self.commands.send(Command::Shutdown);
     }
+}
+
+#[cfg(feature = "asr")]
+fn transcribe_task(path: PathBuf, model: AsrModel, job: Job) -> Task<Message> {
+    Task::perform(
+        async move {
+            let worker_path = path.clone();
+            let result = thread::spawn(move || {
+                crate::transcribe_file(&worker_path, model.parameter(), &job)
+                    .map_err(|error| error.message)
+            })
+            .join()
+            .unwrap_or_else(|_| Err("Offline transcription worker stopped unexpectedly".into()));
+            (path, result)
+        },
+        |(path, result)| Message::TranscriptionFinished(path, result),
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -852,6 +1004,14 @@ enum Message {
     ApplyCueTiming,
     UndoCueTiming,
     RedoCueTiming,
+    #[cfg(feature = "asr")]
+    AsrModelChanged(AsrModel),
+    #[cfg(feature = "asr")]
+    Transcribe,
+    #[cfg(feature = "asr")]
+    CancelTranscription,
+    #[cfg(feature = "asr")]
+    TranscriptionFinished(PathBuf, std::result::Result<Vec<Segment>, String>),
     Tick,
 }
 

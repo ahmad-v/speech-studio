@@ -60,7 +60,7 @@ pub const OPERATIONS:&[Operation]=&[
  Operation{id:"export-vtt",label:"Save WebVTT",hint:"Export an SRT file or edited SRT draft as plain-text WebVTT cues. Choose a new .vtt output."},
  Operation{id:"export-lrc",label:"Save LRC lyrics",hint:"Export cue start times and text to LRC. LRC has no cue end times; multiline text is joined with spaces."},
  #[cfg(feature="asr")]
- Operation{id:"transcribe",label:"Transcribe (experimental)",hint:"16 kHz mono PCM16 WAV. Leave the parameter blank for private English Tiny; enter multilingual for private multilingual Tiny; or supply absolute model path | SHA256. CPU inference."}];
+ Operation{id:"transcribe",label:"Transcribe (experimental)",hint:"With audio-playback enabled, transcribe supported local audio after bounded mono conversion and resampling; ASR-only builds accept 16 kHz mono PCM16 WAV. Leave the parameter blank for private English Tiny or enter multilingual for private multilingual Tiny. CPU inference; review the transcript."}];
 fn err(e: impl std::fmt::Display) -> Error {
     Error::input(e.to_string())
 }
@@ -1138,6 +1138,138 @@ fn transcribe(samples: &[f32], parameter: &str, j: &Job) -> Result<Vec<Segment>>
     }
     Ok(out)
 }
+
+#[cfg(all(feature = "asr", feature = "audio-playback"))]
+fn decode_whisper_samples(bytes: std::sync::Arc<[u8]>, job: &Job) -> Result<Vec<f32>> {
+    const TARGET_RATE: u32 = 16_000;
+    const MAX_OUTPUT_FRAMES: u64 = 600 * TARGET_RATE as u64;
+    let mut decoder = open_audio_decoder(bytes, job)?;
+    let channels = decoder.channels();
+    let sample_rate = decoder.sample_rate();
+    if !(1..=8).contains(&channels) || !(8_000..=192_000).contains(&sample_rate) {
+        return Err(Error::input(
+            "Offline transcription requires 1–8 channels at 8–192 kHz",
+        ));
+    }
+    let maximum_input_samples = 600u64
+        .checked_mul(u64::from(sample_rate))
+        .and_then(|frames| frames.checked_mul(u64::from(channels)))
+        .ok_or_else(|| Error::input("Decoded audio sample count overflow"))?;
+    let mut output = Vec::with_capacity(16_000);
+    let mut samples_read = 0u64;
+    let mut frames_read = 0u64;
+    let mut channel_sum = 0f64;
+    let mut channels_read = 0u16;
+
+    // For downsampling, integrate the source frames over each target interval. This
+    // avoids simply dropping high-frequency samples and limits output to ten minutes.
+    let mut filled = 0u64;
+    let mut weighted_sum = 0f64;
+    let mut previous = None;
+    let mut next_output = 1u64;
+    for sample in &mut decoder {
+        if samples_read % 4096 == 0 {
+            job.check()?;
+        }
+        samples_read = samples_read
+            .checked_add(1)
+            .filter(|count| *count <= maximum_input_samples)
+            .ok_or_else(|| Error::input("Decoded audio exceeds the 10-minute limit"))?;
+        channel_sum += f64::from(sample) / 32768.0;
+        channels_read += 1;
+        if channels_read != channels {
+            continue;
+        }
+        channels_read = 0;
+        let mono = (channel_sum / f64::from(channels)) as f32;
+        channel_sum = 0.0;
+
+        if sample_rate >= TARGET_RATE {
+            let overlap = u64::from(TARGET_RATE).min(u64::from(sample_rate) - filled);
+            weighted_sum += f64::from(mono) * overlap as f64;
+            filled += overlap;
+            if filled == u64::from(sample_rate) {
+                if output.len() as u64 >= MAX_OUTPUT_FRAMES {
+                    return Err(Error::input("Transcription exceeds the 10-minute limit"));
+                }
+                output.push((weighted_sum / f64::from(sample_rate)) as f32);
+                filled = u64::from(TARGET_RATE) - overlap;
+                weighted_sum = f64::from(mono) * filled as f64;
+            }
+        } else if frames_read == 0 {
+            output.push(mono);
+        } else if let Some(previous_sample) = previous {
+            let left = frames_read - 1;
+            loop {
+                let numerator = next_output
+                    .checked_mul(u64::from(sample_rate))
+                    .ok_or_else(|| Error::input("Resampled audio index overflow"))?;
+                let right_edge = frames_read
+                    .checked_mul(u64::from(TARGET_RATE))
+                    .ok_or_else(|| Error::input("Resampled audio index overflow"))?;
+                if numerator > right_edge {
+                    break;
+                }
+                let left_edge = left
+                    .checked_mul(u64::from(TARGET_RATE))
+                    .ok_or_else(|| Error::input("Resampled audio index overflow"))?;
+                if numerator < left_edge {
+                    break;
+                }
+                if output.len() as u64 >= MAX_OUTPUT_FRAMES {
+                    return Err(Error::input("Transcription exceeds the 10-minute limit"));
+                }
+                let fraction = (numerator - left_edge) as f64 / f64::from(TARGET_RATE);
+                output.push(
+                    (f64::from(previous_sample)
+                        + (f64::from(mono) - f64::from(previous_sample)) * fraction)
+                        as f32,
+                );
+                next_output += 1;
+            }
+        }
+        previous = Some(mono);
+        frames_read += 1;
+    }
+    if channels_read != 0 || frames_read == 0 {
+        return Err(Error::input(
+            "Decoded audio is empty or has an incomplete frame",
+        ));
+    }
+    if sample_rate >= TARGET_RATE {
+        if filled > 0 {
+            output.push((weighted_sum / filled as f64) as f32);
+        }
+    } else {
+        let expected = frames_read
+            .checked_mul(u64::from(TARGET_RATE))
+            .and_then(|count| count.checked_add(u64::from(sample_rate) - 1))
+            .map(|count| count / u64::from(sample_rate))
+            .filter(|count| *count <= MAX_OUTPUT_FRAMES)
+            .ok_or_else(|| Error::input("Transcription exceeds the 10-minute limit"))?;
+        if let Some(last) = previous {
+            while (output.len() as u64) < expected {
+                output.push(last);
+            }
+        }
+    }
+    if output.is_empty() || output.len() as u64 > MAX_OUTPUT_FRAMES {
+        return Err(Error::input(
+            "Audio could not be resampled for transcription",
+        ));
+    }
+    job.check()?;
+    Ok(output)
+}
+
+#[cfg(feature = "asr")]
+pub(crate) fn transcribe_file(input: &Path, parameter: &str, job: &Job) -> Result<Vec<Segment>> {
+    #[cfg(feature = "audio-playback")]
+    let samples = decode_whisper_samples(read_bounded(input, 128 * 1024 * 1024)?.into(), job)?;
+    #[cfg(not(feature = "audio-playback"))]
+    let samples = wav(input, job)?;
+    transcribe(&samples, parameter, job)
+}
 pub fn handle(r: Request, j: Job) -> Result<Outcome> {
     j.check()?;
     let mut out = Outcome::default();
@@ -1343,8 +1475,7 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
         }
         #[cfg(feature = "asr")]
         "transcribe" => {
-            let samples = wav(&r.input, &j)?;
-            let segments = transcribe(&samples, &r.parameter, &j)?;
+            let segments = transcribe_file(&r.input, &r.parameter, &j)?;
             let s = render(&segments);
             parse(&s)?;
             out.preview = format!(
@@ -1364,6 +1495,56 @@ pub fn handle(r: Request, j: Job) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(all(feature = "asr", feature = "audio-playback"))]
+    #[test]
+    fn whisper_audio_decoder_downmixes_and_resamples_supported_wav_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let stereo = dir.path().join("stereo.wav");
+        let mut writer = hound::WavWriter::create(
+            &stereo,
+            hound::WavSpec {
+                channels: 2,
+                sample_rate: 48_000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )
+        .unwrap();
+        for _ in 0..48_000 {
+            writer.write_sample(16_384i16).unwrap();
+            writer.write_sample(0i16).unwrap();
+        }
+        writer.finalize().unwrap();
+        let stereo_samples =
+            decode_whisper_samples(std::fs::read(&stereo).unwrap().into(), &Job::new()).unwrap();
+        assert_eq!(stereo_samples.len(), 16_000);
+        assert!(stereo_samples
+            .iter()
+            .all(|sample| (*sample - 0.25).abs() < 0.001));
+
+        let mono = dir.path().join("mono.wav");
+        let mut writer = hound::WavWriter::create(
+            &mono,
+            hound::WavSpec {
+                channels: 1,
+                sample_rate: 8_000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            },
+        )
+        .unwrap();
+        for _ in 0..8_000 {
+            writer.write_sample(8_192i16).unwrap();
+        }
+        writer.finalize().unwrap();
+        let mono_samples =
+            decode_whisper_samples(std::fs::read(mono).unwrap().into(), &Job::new()).unwrap();
+        assert_eq!(mono_samples.len(), 16_000);
+        assert!(mono_samples
+            .iter()
+            .all(|sample| (*sample - 0.25).abs() < 0.001));
+    }
+
     #[cfg(feature = "audio-playback")]
     #[test]
     fn waveform_rebinning_preserves_peaks_when_duration_estimates_change() {
