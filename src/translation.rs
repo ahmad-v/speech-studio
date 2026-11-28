@@ -270,6 +270,7 @@ pub(crate) fn translate_english_to_french(text: &str, job: &Job) -> Result<Strin
         || config.encoder_layers != 6
         || config.decoder_layers != 6
         || config.decoder_start_token_id != 59_513
+        || config.pad_token_id != 59_513
         || config.eos_token_id != 0
     {
         return Err(Error::input(
@@ -318,7 +319,7 @@ pub(crate) fn translate_english_to_french(text: &str, job: &Job) -> Result<Strin
         let next_id = next_scores
             .iter()
             .enumerate()
-            .filter(|(_, score)| score.is_finite())
+            .filter(|(id, score)| *id != config.pad_token_id as usize && score.is_finite())
             .max_by(|(_, left), (_, right)| left.total_cmp(right))
             .map(|(id, _)| id)
             .ok_or_else(|| Error::input("Translation model produced no finite token scores"))?;

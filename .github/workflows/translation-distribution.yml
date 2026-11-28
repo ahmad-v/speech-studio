@@ -2,7 +2,7 @@ name: Offline translation model bundle
 
 on:
   pull_request:
-    types: [labeled]
+    types: [labeled, synchronize]
   workflow_dispatch:
 
 permissions:
